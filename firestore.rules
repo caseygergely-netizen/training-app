@@ -1,0 +1,46 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Athletes: anyone signed in can read (leaderboard needs it).
+    // Athletes write only their own profile. Demo seeding is allowed for
+    // docs flagged demo == true so the "Load demo data" button works.
+    match /athletes/{uid} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && (request.auth.uid == uid || request.resource.data.demo == true);
+      allow update: if isSignedIn() && request.auth.uid == uid;
+      allow delete: if false;
+    }
+
+    // Sessions: anyone signed in can read (feed + board need it).
+    // Athletes write only their own sessions. Demo seeding allowed for
+    // docs flagged demo == true.
+    match /sessions/{sid} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && (request.resource.data.athleteId == request.auth.uid
+            || request.resource.data.demo == true);
+      allow update: if isSignedIn()
+        && resource.data.athleteId == request.auth.uid
+        && request.resource.data.athleteId == request.auth.uid;
+      allow delete: if isSignedIn()
+        && resource.data.athleteId == request.auth.uid;
+    }
+
+    // Invites: signed-in users can read and create codes.
+    // Marking a code used may only touch the usedBy field.
+    match /invites/{code} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn()
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['usedBy']);
+      allow delete: if false;
+    }
+  }
+}
