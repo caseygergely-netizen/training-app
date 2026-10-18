@@ -12,6 +12,7 @@ import {
   setDoc,
   updateDoc,
   query,
+  where,
   orderBy,
   limit,
   serverTimestamp,
@@ -117,6 +118,32 @@ export async function signUpAthlete({ name, email, password, sports, inviteCode 
     await updateDoc(doc(db, "invites", code), { usedBy: uid });
   }
   return uid;
+}
+
+/**
+ * Finish a partial signup: the auth user exists but the athlete doc was
+ * never written (first attempt died mid-submit). Creates the athlete doc
+ * for the existing uid and marks the invite code used.
+ */
+export async function completeAthleteProfile(uid, { name, sports, inviteCode }) {
+  const code = (inviteCode || "").trim().toUpperCase();
+  if (!code) throw new Error("An invite code is required to join.");
+  const invSnap = await getDoc(doc(db, "invites", code));
+  if (!invSnap.exists()) throw new Error("That invite code doesn't exist.");
+  if (invSnap.data().usedBy)
+    throw new Error("That invite code has already been used.");
+  const now = todayStr();
+  await setDoc(doc(db, "athletes", uid), {
+    name: name.trim(),
+    sports,
+    handicap: 1.0,
+    handicapHistory: [
+      { value: 1.0, effectiveFrom: now, reason: "Initial handicap" },
+    ],
+    inviteCode: code,
+    createdAt: serverTimestamp(),
+  });
+  await updateDoc(doc(db, "invites", code), { usedBy: uid });
 }
 
 export function signInAthlete(email, password) {
@@ -234,6 +261,23 @@ export async function seedDemoData() {
     batch.set(doc(db, "sessions", id), { ...rest, createdAt: serverTimestamp() });
   }
   await batch.commit();
+}
+
+/**
+ * Delete every doc flagged demo == true (demo athletes + their sessions).
+ * Real athlete data is never touched. Rules allow any signed-in user to
+ * delete demo-flagged docs (see firestore.rules).
+ */
+export async function clearDemoData() {
+  const [aSnap, sSnap] = await Promise.all([
+    getDocs(query(collection(db, "athletes"), where("demo", "==", true))),
+    getDocs(query(collection(db, "sessions"), where("demo", "==", true))),
+  ]);
+  const batch = writeBatch(db);
+  aSnap.docs.forEach((d) => batch.delete(d.ref));
+  sSnap.docs.forEach((d) => batch.delete(d.ref));
+  await batch.commit();
+  return aSnap.size + sSnap.size;
 }
 
 /* ---------------- auth state ---------------- */

@@ -9,6 +9,7 @@ import AthleteProfile from "./pages/AthleteProfile.jsx";
 import AICoach from "./pages/AICoach.jsx";
 import Invite from "./pages/Invite.jsx";
 import Login from "./pages/Login.jsx";
+import FinishSetup from "./pages/FinishSetup.jsx";
 import { isConfigured } from "./firebase.js";
 import {
   useAuthUser,
@@ -83,9 +84,17 @@ function Header() {
 }
 
 function RequireAuth({ children }) {
-  const { user, ready } = useAuth();
-  if (!ready) return <div className="page"><div className="skel" style={{ height: 120 }} /></div>;
+  const { user, athlete, ready, athleteLoading } = useAuth();
+  if (!ready || athleteLoading)
+    return (
+      <div className="page">
+        <div className="skel" style={{ height: 120 }} />
+      </div>
+    );
   if (!user) return <Navigate to="/login" replace />;
+  // Signed in but the athlete doc was never written (partial signup):
+  // let them finish setup instead of bouncing them to the leaderboard.
+  if (!athlete) return <FinishSetup />;
   return children;
 }
 
