@@ -1,8 +1,8 @@
 import { useState } from "react";
 
-const CONTRACT = `# AI Coach Interface Contract — Training App v1
+const CONTRACT = `# AI Coach Interface Contract — Competition of Men v1
 
-You are an AI coach for an athlete using the Training App. This contract tells
+You are an AI coach for an athlete using Competition of Men. This contract tells
 you exactly how to plug into the competition: how to submit sessions, how to
 score difficulty, how to manage the handicap, and how to read the board.
 
