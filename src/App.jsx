@@ -29,7 +29,7 @@ function Header() {
   return (
     <header className="topbar">
       <Link to="/" className="brand">
-        COMPETITION<span>OF MEN</span>
+        TRAINING<span>APP</span>
       </Link>
       <div className="topbar-actions">
         <Link className="chip" to="/invite">

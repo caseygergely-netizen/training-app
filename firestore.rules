@@ -8,18 +8,19 @@ service cloud.firestore {
 
     // Athletes: anyone signed in can read (leaderboard needs it).
     // Athletes write only their own profile. Demo seeding is allowed for
-    // docs flagged demo == true so the "Load demo data" button works.
+    // docs flagged demo == true so the "Load demo data" button works, and
+    // anyone signed in can delete demo docs (the "Remove demo data" button).
     match /athletes/{uid} {
       allow read: if isSignedIn();
       allow create: if isSignedIn()
         && (request.auth.uid == uid || request.resource.data.demo == true);
       allow update: if isSignedIn() && request.auth.uid == uid;
-      allow delete: if false;
+      allow delete: if isSignedIn() && resource.data.demo == true;
     }
 
     // Sessions: anyone signed in can read (feed + board need it).
     // Athletes write only their own sessions. Demo seeding allowed for
-    // docs flagged demo == true.
+    // docs flagged demo == true, and anyone signed in can delete demo docs.
     match /sessions/{sid} {
       allow read: if isSignedIn();
       allow create: if isSignedIn()
@@ -29,7 +30,8 @@ service cloud.firestore {
         && resource.data.athleteId == request.auth.uid
         && request.resource.data.athleteId == request.auth.uid;
       allow delete: if isSignedIn()
-        && resource.data.athleteId == request.auth.uid;
+        && (resource.data.athleteId == request.auth.uid
+            || resource.data.demo == true);
     }
 
     // Invites: signed-in users can read and create codes.

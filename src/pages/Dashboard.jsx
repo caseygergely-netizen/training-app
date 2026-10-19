@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { useAthletes, useSessions, seedDemoData } from "../lib/firestore.js";
+import { useAthletes, useSessions, seedDemoData, clearDemoData } from "../lib/firestore.js";
 import {
   rolling14Day,
   dailyPoints,
@@ -29,11 +29,14 @@ export default function Dashboard() {
   const { sessions, loading: sLoading } = useSessions();
   const [seeding, setSeeding] = useState(false);
   const [seedError, setSeedError] = useState("");
+  const [clearing, setClearing] = useState(false);
 
   const loading = aLoading || sLoading;
   const asOf = todayStr();
   const board = rolling14Day(sessions, athletes, asOf);
   const badges = hypeBadges(sessions, athletes, asOf);
+  const hasDemo =
+    athletes.some((a) => a.demo) || sessions.some((s) => s.demo);
 
   async function handleSeed() {
     setSeeding(true);
@@ -44,6 +47,24 @@ export default function Dashboard() {
       setSeedError(e.message || "Seeding failed.");
     } finally {
       setSeeding(false);
+    }
+  }
+
+  async function handleClearDemo() {
+    if (
+      !window.confirm(
+        "Remove all demo athletes and sessions? Your real data stays untouched."
+      )
+    )
+      return;
+    setClearing(true);
+    setSeedError("");
+    try {
+      await clearDemoData();
+    } catch (e) {
+      setSeedError(e.message || "Could not remove demo data.");
+    } finally {
+      setClearing(false);
     }
   }
 
@@ -60,6 +81,14 @@ export default function Dashboard() {
     <div className="page">
       <h1>🏆 Leaderboard</h1>
       <p className="sub">Rolling 14 days · points = minutes × difficulty × handicap</p>
+      {seedError && <div className="error">{seedError}</div>}
+      {hasDemo && (
+        <div style={{ marginBottom: 12 }}>
+          <button className="btn ghost" onClick={handleClearDemo} disabled={clearing}>
+            {clearing ? "Removing demo data…" : "Remove demo data"}
+          </button>
+        </div>
+      )}
 
       {sessions.length === 0 ? (
         <div className="empty">
