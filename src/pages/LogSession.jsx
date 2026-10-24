@@ -5,11 +5,17 @@ import { logSession } from "../lib/firestore.js";
 import {
   SPORTS,
   SPORT_META,
+  TEST_TYPES,
   parseCoachBlock,
+  cleanTestResult,
+  computeLoad,
+  formatKm,
   todayStr,
   sessionPoints,
   handicapAt,
 } from "../lib/points.js";
+
+const LIFTS = ["squat", "bench", "deadlift"];
 
 export default function LogSession() {
   const { athlete } = useAuth();
@@ -21,6 +27,22 @@ export default function LogSession() {
   const [distanceKm, setDistanceKm] = useState("");
   const [details, setDetails] = useState("");
   const [notes, setNotes] = useState("");
+  // Optional performance data (feeds the Load metric).
+  const [avgHr, setAvgHr] = useState("");
+  const [avgPowerW, setAvgPowerW] = useState("");
+  const [relativeEffort, setRelativeEffort] = useState("");
+  // Optional standard test result.
+  const [testType, setTestType] = useState("");
+  const [testTime, setTestTime] = useState(""); // run5k / ski10k "MM:SS"
+  const [skiConditions, setSkiConditions] = useState("");
+  const [t400, setT400] = useState(""); // swimCss
+  const [t200, setT200] = useState("");
+  const [testPower, setTestPower] = useState(""); // bikeFtp 20-min avg power
+  const [lifts, setLifts] = useState({
+    squat: { weightKg: "", reps: "" },
+    bench: { weightKg: "", reps: "" },
+    deadlift: { weightKg: "", reps: "" },
+  });
   const [coachBlock, setCoachBlock] = useState("");
   const [coachParsed, setCoachParsed] = useState(null);
   const [coachError, setCoachError] = useState("");
@@ -37,11 +59,68 @@ export default function LogSession() {
       setSport(parsed.sport);
       setDate(parsed.date);
       setMinutes(String(parsed.minutes));
-      setDistanceKm(parsed.distanceKm != null ? String(parsed.distanceKm) : "");
+      setDistanceKm(parsed.distanceKm != null ? formatKm(parsed.distanceKm) : "");
       setDetails(parsed.details || "");
       setNotes(parsed.notes || "");
+      setAvgHr(parsed.avgHr != null ? String(parsed.avgHr) : "");
+      setAvgPowerW(parsed.avgPowerW != null ? String(parsed.avgPowerW) : "");
+      setRelativeEffort(parsed.relativeEffort != null ? String(parsed.relativeEffort) : "");
+      // Test result from the block, if any.
+      setTestType(parsed.testType || "");
+      if (parsed.testType === "run5k" || parsed.testType === "ski10k") {
+        const sec = parsed.test?.timeSec || 0;
+        setTestTime(sec ? `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}` : "");
+        if (parsed.testType === "ski10k") setSkiConditions(parsed.test?.conditions || "");
+      }
+      if (parsed.testType === "swimCss") {
+        const f = (sec) =>
+          sec ? `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}` : "";
+        setT400(f(parsed.test?.t400Sec));
+        setT200(f(parsed.test?.t200Sec));
+      }
+      if (parsed.testType === "bikeFtp") {
+        setTestPower(parsed.test?.avgPowerW ? String(parsed.test.avgPowerW) : "");
+        if (parsed.test?.avgPowerW) setAvgPowerW(String(parsed.test.avgPowerW));
+      }
+      if (parsed.testType === "strength5rm" && parsed.test?.lifts) {
+        setLifts((prev) => {
+          const next = { ...prev };
+          for (const lift of LIFTS) {
+            const set = parsed.test.lifts[lift];
+            next[lift] = set
+              ? { weightKg: String(set.weightKg), reps: String(set.reps) }
+              : { weightKg: "", reps: "" };
+          }
+          return next;
+        });
+      }
     } catch (e) {
       setCoachError(e.message);
+    }
+  }
+
+  /** Build the raw test object from the form; cleanTestResult validates it. */
+  function rawTestFromForm() {
+    switch (testType) {
+      case "run5k":
+        return { time: testTime };
+      case "ski10k":
+        return { time: testTime, conditions: skiConditions };
+      case "swimCss":
+        return { t400, t200 };
+      case "bikeFtp":
+        return { avgPowerW: Number(testPower) };
+      case "strength5rm": {
+        const out = {};
+        for (const lift of LIFTS) {
+          const { weightKg, reps } = lifts[lift];
+          if (weightKg !== "" || reps !== "")
+            out[lift] = { weightKg: Number(weightKg), reps: Number(reps) };
+        }
+        return { lifts: out };
+      }
+      default:
+        return null;
     }
   }
 
@@ -57,6 +136,19 @@ export default function LogSession() {
       setError("Minutes must be a number greater than 0.");
       return;
     }
+
+    // Test section is optional; when a type is picked, it must be valid.
+    let testFields = {};
+    if (testType) {
+      const cleaned = cleanTestResult(testType, rawTestFromForm());
+      if (cleaned.problem) {
+        setError(cleaned.problem);
+        return;
+      }
+      testFields = { testType, test: cleaned.test };
+    }
+
+    const num = (v) => (v === "" ? undefined : Number(v));
     setSaving(true);
     try {
       await logSession(athlete, {
@@ -66,6 +158,10 @@ export default function LogSession() {
         distanceKm: distanceKm === "" ? null : Number(distanceKm),
         details,
         notes,
+        avgHr: num(avgHr),
+        avgPowerW: num(avgPowerW),
+        relativeEffort: num(relativeEffort),
+        ...testFields,
         // Difficulty comes from the coach block when present; otherwise the
         // manual default (1.0, flagged for coach review).
         difficulty: coachParsed ? coachParsed.difficulty : 1.0,
@@ -79,14 +175,39 @@ export default function LogSession() {
   }
 
   const previewHandicap = athlete ? handicapAt(athlete, date || todayStr()) : 1.0;
+  const previewDifficulty = coachParsed ? coachParsed.difficulty : 1.0;
   const previewPoints =
     minutes && Number(minutes) > 0
       ? sessionPoints({
           minutes: Number(minutes),
-          difficulty: coachParsed ? coachParsed.difficulty : 1.0,
+          difficulty: previewDifficulty,
           handicap: previewHandicap,
         })
       : null;
+  const previewLoad =
+    minutes && Number(minutes) > 0
+      ? computeLoad(
+          {
+            sport,
+            minutes: Number(minutes),
+            difficulty: previewDifficulty,
+            avgHr: avgHr === "" ? undefined : Number(avgHr),
+            avgPowerW: avgPowerW === "" ? undefined : Number(avgPowerW),
+            relativeEffort: relativeEffort === "" ? undefined : Number(relativeEffort),
+          },
+          athlete
+        )
+      : null;
+
+  const testOptions = Object.entries(TEST_TYPES).filter(
+    ([, t]) => t.sport === sport
+  );
+
+  function pickSport(s) {
+    setSport(s);
+    // A test type only makes sense for its own sport — reset on switch.
+    if (testType && TEST_TYPES[testType]?.sport !== s) setTestType("");
+  }
 
   return (
     <div className="page">
@@ -138,7 +259,7 @@ export default function LogSession() {
                   key={s}
                   type="button"
                   className={sport === s ? "on" : ""}
-                  onClick={() => setSport(s)}
+                  onClick={() => pickSport(s)}
                 >
                   {SPORT_META[s].icon} {SPORT_META[s].label}
                 </button>
@@ -174,10 +295,10 @@ export default function LogSession() {
               <input
                 type="number"
                 min="0"
-                step="0.1"
+                step="0.01"
                 value={distanceKm}
                 onChange={(e) => setDistanceKm(e.target.value)}
-                placeholder="—"
+                placeholder="33.66"
               />
             </div>
           </div>
@@ -207,6 +328,178 @@ export default function LogSession() {
             />
           </div>
 
+          <div className="row">
+            <div className="field grow">
+              <label>Avg HR (optional)</label>
+              <input
+                type="number"
+                min="0"
+                value={avgHr}
+                onChange={(e) => setAvgHr(e.target.value)}
+                placeholder="—"
+              />
+            </div>
+            <div className="field grow">
+              <label>Avg power W (optional)</label>
+              <input
+                type="number"
+                min="0"
+                value={avgPowerW}
+                onChange={(e) => setAvgPowerW(e.target.value)}
+                placeholder="—"
+              />
+            </div>
+            <div className="field grow">
+              <label>Strava Rel. Effort (optional)</label>
+              <input
+                type="number"
+                min="0"
+                value={relativeEffort}
+                onChange={(e) => setRelativeEffort(e.target.value)}
+                placeholder="—"
+              />
+            </div>
+          </div>
+          <p className="small muted" style={{ marginTop: -4 }}>
+            HR / power / Relative Effort feed the <strong>Load</strong> number
+            shown next to points. Leave blank and Load is estimated from
+            duration × difficulty.
+          </p>
+        </div>
+
+        <div className="card">
+          <h3>🏁 Standard test (optional)</h3>
+          <p className="small muted">
+            Was this session a standard test? Record the result — it feeds the{" "}
+            <Link to="/tests" style={{ color: "var(--accent)" }}>
+              Tests &amp; PBs board
+            </Link>
+            .
+          </p>
+          <div className="field">
+            <label>Test type</label>
+            <div className="sport-pick">
+              <button
+                type="button"
+                className={testType === "" ? "on" : ""}
+                onClick={() => setTestType("")}
+              >
+                Not a test
+              </button>
+              {testOptions.map(([key, t]) => (
+                <button
+                  key={key}
+                  type="button"
+                  className={testType === key ? "on" : ""}
+                  onClick={() => setTestType(key)}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {(testType === "run5k" || testType === "ski10k") && (
+            <div className="field">
+              <label>{testType === "run5k" ? "5 km time" : "10 km time"} (MM:SS)</label>
+              <input
+                value={testTime}
+                onChange={(e) => setTestTime(e.target.value)}
+                placeholder="19:42"
+              />
+            </div>
+          )}
+          {testType === "ski10k" && (
+            <div className="field">
+              <label>Snow conditions</label>
+              <input
+                value={skiConditions}
+                onChange={(e) => setSkiConditions(e.target.value)}
+                placeholder="Cold, fast, fresh corduroy… (times are condition-dependent)"
+              />
+            </div>
+          )}
+          {testType === "swimCss" && (
+            <div className="row">
+              <div className="field grow">
+                <label>400 m time (M:SS)</label>
+                <input
+                  value={t400}
+                  onChange={(e) => setT400(e.target.value)}
+                  placeholder="5:20"
+                />
+              </div>
+              <div className="field grow">
+                <label>200 m time (M:SS)</label>
+                <input
+                  value={t200}
+                  onChange={(e) => setT200(e.target.value)}
+                  placeholder="2:35"
+                />
+              </div>
+            </div>
+          )}
+          {testType === "bikeFtp" && (
+            <div className="field">
+              <label>Average power for the 20 minutes (W)</label>
+              <input
+                type="number"
+                min="0"
+                value={testPower}
+                onChange={(e) => setTestPower(e.target.value)}
+                placeholder="268"
+              />
+              <p className="small muted" style={{ marginTop: 6 }}>
+                FTP estimate = 0.95 × this number, shown on the Tests page.
+              </p>
+            </div>
+          )}
+          {testType === "strength5rm" && (
+            <>
+              <p className="small muted">
+                Top set per lift — estimated 1RM (Epley) is computed for you.
+                Leave a lift blank if you didn't test it.
+              </p>
+              {LIFTS.map((lift) => (
+                <div className="row" key={lift}>
+                  <div className="field grow">
+                    <label>{lift} weight (kg)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.5"
+                      value={lifts[lift].weightKg}
+                      onChange={(e) =>
+                        setLifts((p) => ({
+                          ...p,
+                          [lift]: { ...p[lift], weightKg: e.target.value },
+                        }))
+                      }
+                      placeholder="—"
+                    />
+                  </div>
+                  <div className="field grow">
+                    <label>{lift} reps</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={lifts[lift].reps}
+                      onChange={(e) =>
+                        setLifts((p) => ({
+                          ...p,
+                          [lift]: { ...p[lift], reps: e.target.value },
+                        }))
+                      }
+                      placeholder="5"
+                    />
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
+        </div>
+
+        <div className="card">
           <div className="kv">
             <span className="k">Your handicap on this date</span>
             <span className="v">×{previewHandicap.toFixed(2)}</span>
@@ -216,6 +509,10 @@ export default function LogSession() {
             <span className="v">
               {coachParsed ? coachParsed.difficulty.toFixed(1) + " (coach)" : "1.0 (default — coach review pending)"}
             </span>
+          </div>
+          <div className="kv">
+            <span className="k">Load{previewLoad?.source === "est" ? " (estimated)" : ""}</span>
+            <span className="v">{previewLoad ? previewLoad.value : "—"}</span>
           </div>
           <div className="kv" style={{ marginBottom: 12 }}>
             <span className="k">Points this will score</span>

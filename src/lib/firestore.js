@@ -25,9 +25,11 @@ import {
   signInWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
+  setPersistence,
+  browserLocalPersistence,
 } from "firebase/auth";
 import { buildSeedData } from "./seed";
-import { handicapAt, sessionPoints, todayStr } from "./points";
+import { computeLoad, handicapAt, sessionPoints, todayStr } from "./points";
 
 /* ---------------- hooks ---------------- */
 
@@ -85,6 +87,8 @@ export function useSessions(max = 500) {
  * Invite code required unless this is the very first athlete in the system.
  */
 export async function signUpAthlete({ name, email, password, sports, inviteCode }) {
+  // Stay signed in on this device across visits (see firebase.js).
+  await setPersistence(auth, browserLocalPersistence).catch(() => {});
   const cred = await createUserWithEmailAndPassword(auth, email, password);
   const uid = cred.user.uid;
 
@@ -146,7 +150,9 @@ export async function completeAthleteProfile(uid, { name, sports, inviteCode }) 
   await updateDoc(doc(db, "invites", code), { usedBy: uid });
 }
 
-export function signInAthlete(email, password) {
+export async function signInAthlete(email, password) {
+  // Stay signed in on this device across visits (see firebase.js).
+  await setPersistence(auth, browserLocalPersistence).catch(() => {});
   return signInWithEmailAndPassword(auth, email, password);
 }
 
@@ -166,8 +172,8 @@ export async function logSession(athlete, fields) {
     fields.difficultyBy === "ai" ? fields.difficulty : 1.0;
   const handicap = handicapAt(athlete, fields.date);
   const points = sessionPoints({ minutes: fields.minutes, difficulty, handicap });
-  const ref = doc(collection(db, "sessions"));
-  await setDoc(ref, {
+
+  const docData = {
     athleteId: athlete.id,
     sport: fields.sport,
     date: fields.date,
@@ -180,19 +186,66 @@ export async function logSession(athlete, fields) {
     points,
     notes: fields.notes || "",
     createdAt: serverTimestamp(),
-  });
+  };
+
+  // Optional performance data (Strava / power meter / HR) — kept only when
+  // provided so older clients and manual entries stay clean.
+  for (const key of ["avgHr", "avgPowerW", "npW", "relativeEffort", "maxPower20W", "ftpW", "thresholdHr"]) {
+    if (fields[key] != null && Number(fields[key]) > 0) docData[key] = Number(fields[key]);
+  }
+  // A bike FTP test also tells us the 20-min power for the PB board.
+  if (fields.testType === "bikeFtp" && fields.test?.avgPowerW) {
+    docData.avgPowerW = docData.avgPowerW ?? Number(fields.test.avgPowerW);
+  }
+  // Optional standard test result.
+  if (fields.testType && fields.test) {
+    docData.testType = fields.testType;
+    docData.test = fields.test;
+  }
+
+  // Training load, computed at write time (shown next to points).
+  const load = computeLoad({ ...docData, difficulty }, athlete);
+  if (load) {
+    docData.load = load.value;
+    docData.loadSource = load.source;
+  }
+
+  const ref = doc(collection(db, "sessions"));
+  await setDoc(ref, docData);
   return ref.id;
 }
 
 /** AI coach (via the athlete) updates a session's difficulty after review. */
-export async function setSessionDifficulty(session, difficulty, athlete) {
+export async function setSessionDifficulty(session, difficulty, athlete, by = "ai") {
   const handicap = handicapAt(athlete, session.date);
-  await updateDoc(doc(db, "sessions", session.id), {
+  const patch = {
     difficulty,
-    difficultyBy: "ai",
+    difficultyBy: by,
     handicapUsed: handicap,
     points: sessionPoints({ minutes: session.minutes, difficulty, handicap }),
-  });
+  };
+  // Difficulty feeds the fallback load estimate — keep it in sync.
+  const load = computeLoad({ ...session, difficulty }, athlete);
+  if (load) {
+    patch.load = load.value;
+    patch.loadSource = load.source;
+  }
+  await updateDoc(doc(db, "sessions", session.id), patch);
+}
+
+/**
+ * Athlete profile settings used by the Load metric and PB board:
+ * weightKg (W/kg), thresholdHr (hrTSS), ftpW (cycling TSS).
+ * Pass null/"" to clear a field.
+ */
+export async function updateAthleteSettings(uid, fields) {
+  const patch = {};
+  for (const key of ["weightKg", "thresholdHr", "ftpW"]) {
+    if (!(key in fields)) continue;
+    const v = fields[key];
+    patch[key] = v == null || v === "" ? null : Number(v);
+  }
+  if (Object.keys(patch).length > 0) await updateDoc(doc(db, "athletes", uid), patch);
 }
 
 /* ---------------- invites ---------------- */

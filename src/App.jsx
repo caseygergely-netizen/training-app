@@ -5,6 +5,7 @@ import Dashboard from "./pages/Dashboard.jsx";
 import Versus from "./pages/Versus.jsx";
 import Feed from "./pages/Feed.jsx";
 import LogSession from "./pages/LogSession.jsx";
+import Benchmarks from "./pages/Benchmarks.jsx";
 import AthleteProfile from "./pages/AthleteProfile.jsx";
 import AICoach from "./pages/AICoach.jsx";
 import Invite from "./pages/Invite.jsx";
@@ -108,32 +109,63 @@ function AuthProvider({ children }) {
   );
 }
 
+/**
+ * App shell. First render is gated on the auth state resolving: previously
+ * the shell (tab bar, login form, routed page) painted immediately with
+ * user=null, then swapped once onAuthStateChanged fired — a signed-in
+ * athlete saw a flash of the signed-out landing page / login form on every
+ * load (the "landing-page glitch"). Now a clean loading screen shows until
+ * we know who's here, and the tab bar only renders for signed-in athletes.
+ */
+function Shell() {
+  const { user, ready, athleteLoading } = useAuth();
+  if (!ready || (user && athleteLoading)) {
+    return (
+      <div className="app-shell">
+        <div className="page center" style={{ paddingTop: 72 }}>
+          <div className="brand" style={{ fontSize: 22 }}>
+            COMPETITION<span>OF MEN</span>
+          </div>
+          <div className="skel" style={{ height: 110, marginTop: 24 }} />
+          <p className="small muted" style={{ marginTop: 14 }}>
+            Loading…
+          </p>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="app-shell">
+      {!isConfigured && (
+        <div className="banner">
+          ⚠️ Firebase isn't configured yet — paste your config into{" "}
+          <code>src/firebase.js</code> (see build-walkthrough.md Part 3),
+          then <code>npm run build</code>.
+        </div>
+      )}
+      <Header />
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/" element={<RequireAuth><Dashboard /></RequireAuth>} />
+        <Route path="/versus" element={<RequireAuth><Versus /></RequireAuth>} />
+        <Route path="/feed" element={<RequireAuth><Feed /></RequireAuth>} />
+        <Route path="/log" element={<RequireAuth><LogSession /></RequireAuth>} />
+        <Route path="/tests" element={<RequireAuth><Benchmarks /></RequireAuth>} />
+        <Route path="/athletes/:id" element={<RequireAuth><AthleteProfile /></RequireAuth>} />
+        <Route path="/ai-coach" element={<RequireAuth><AICoach /></RequireAuth>} />
+        <Route path="/invite" element={<RequireAuth><Invite /></RequireAuth>} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+      {user && <Nav />}
+    </div>
+  );
+}
+
 export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <div className="app-shell">
-          {!isConfigured && (
-            <div className="banner">
-              ⚠️ Firebase isn't configured yet — paste your config into{" "}
-              <code>src/firebase.js</code> (see build-walkthrough.md Part 3),
-              then <code>npm run build</code>.
-            </div>
-          )}
-          <Header />
-          <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route path="/" element={<RequireAuth><Dashboard /></RequireAuth>} />
-            <Route path="/versus" element={<RequireAuth><Versus /></RequireAuth>} />
-            <Route path="/feed" element={<RequireAuth><Feed /></RequireAuth>} />
-            <Route path="/log" element={<RequireAuth><LogSession /></RequireAuth>} />
-            <Route path="/athletes/:id" element={<RequireAuth><AthleteProfile /></RequireAuth>} />
-            <Route path="/ai-coach" element={<RequireAuth><AICoach /></RequireAuth>} />
-            <Route path="/invite" element={<RequireAuth><Invite /></RequireAuth>} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-          <Nav />
-        </div>
+        <Shell />
       </AuthProvider>
     </BrowserRouter>
   );

@@ -1,5 +1,9 @@
 import { initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
+import {
+  getAuth,
+  setPersistence,
+  browserLocalPersistence,
+} from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 /* ============================================================================
@@ -31,3 +35,18 @@ const app = initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
 export const db = getFirestore(app);
+
+/**
+ * Keep athletes signed in across visits on the same device/browser.
+ * Firebase Auth's web default is already local persistence in most
+ * browsers, but some webviews / privacy modes fall back to session or
+ * in-memory persistence — which is why athletes were being asked to sign
+ * in again on later visits. Set it explicitly here, and again before each
+ * sign-in / sign-up (see lib/firestore.js).
+ */
+export const authPersistenceReady = setPersistence(
+  auth,
+  browserLocalPersistence
+).catch(() => {
+  /* persistence unavailable (e.g. blocked storage) — sign-in still works */
+});

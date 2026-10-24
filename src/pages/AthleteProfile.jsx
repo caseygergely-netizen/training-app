@@ -10,7 +10,12 @@ import {
   Pie,
   Cell,
 } from "recharts";
-import { useAthletes, useSessions, updateHandicap } from "../lib/firestore.js";
+import {
+  useAthletes,
+  useSessions,
+  updateHandicap,
+  updateAthleteSettings,
+} from "../lib/firestore.js";
 import { useAuth } from "../App.jsx";
 import {
   dailyPoints,
@@ -19,7 +24,7 @@ import {
   SPORT_META,
   round1,
 } from "../lib/points.js";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const PIE_COLORS = ["#7cc4ff", "#8ce99a", "#b197fc", "#ffb35c", "#66d9e8"];
 
@@ -32,9 +37,23 @@ export default function AthleteProfile() {
   const [hcpReason, setHcpReason] = useState("");
   const [hcpMsg, setHcpMsg] = useState("");
   const [hcpSaving, setHcpSaving] = useState(false);
+  const [weightKg, setWeightKg] = useState("");
+  const [thresholdHr, setThresholdHr] = useState("");
+  const [ftpW, setFtpW] = useState("");
+  const [settingsMsg, setSettingsMsg] = useState("");
+  const [settingsSaving, setSettingsSaving] = useState(false);
 
   const loading = aLoading || sLoading;
   const athlete = athletes.find((a) => a.id === id);
+
+  // Populate the settings form once this athlete's doc is loaded.
+  useEffect(() => {
+    if (!athlete) return;
+    setWeightKg(athlete.weightKg != null ? String(athlete.weightKg) : "");
+    setThresholdHr(athlete.thresholdHr != null ? String(athlete.thresholdHr) : "");
+    setFtpW(athlete.ftpW != null ? String(athlete.ftpW) : "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [athlete?.id]);
   const asOf = todayStr();
   const start = addDays(asOf, -13);
 
@@ -80,6 +99,34 @@ export default function AthleteProfile() {
   );
 
   const isMe = me && me.id === id;
+
+  async function handleSettingsSave(e) {
+    e.preventDefault();
+    setSettingsMsg("");
+    const check = (v, label, lo, hi) => {
+      if (v === "") return null;
+      const n = Number(v);
+      if (!(n >= lo && n <= hi)) return `${label} looks off — check the number.`;
+      return null;
+    };
+    const problem =
+      check(weightKg, "Weight", 30, 250) ||
+      check(thresholdHr, "Threshold HR", 100, 220) ||
+      check(ftpW, "FTP", 50, 600);
+    if (problem) {
+      setSettingsMsg(problem);
+      return;
+    }
+    setSettingsSaving(true);
+    try {
+      await updateAthleteSettings(id, { weightKg, thresholdHr, ftpW });
+      setSettingsMsg("✅ Saved — Load and W/kg use these from now on.");
+    } catch (err) {
+      setSettingsMsg(err.message || "Couldn't save settings.");
+    } finally {
+      setSettingsSaving(false);
+    }
+  }
 
   async function handleHandicapUpdate(e) {
     e.preventDefault();
@@ -128,6 +175,60 @@ export default function AthleteProfile() {
           <div className="v" style={{ fontSize: 18 }}>{totalMinutes}</div>
         </div>
       </div>
+
+      {isMe && (
+        <div className="card">
+          <h3>My numbers (for Load &amp; W/kg)</h3>
+          <p className="small muted">
+            Optional — they power the training-load metric and the cycling
+            PB in W/kg. Weight feeds W/kg, threshold HR feeds hrTSS, FTP
+            feeds cycling TSS.
+          </p>
+          {settingsMsg && (
+            <div className={settingsMsg.startsWith("✅") ? "notice" : "error"}>
+              {settingsMsg}
+            </div>
+          )}
+          <form onSubmit={handleSettingsSave}>
+            <div className="row">
+              <div className="field grow">
+                <label>Weight (kg)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  value={weightKg}
+                  onChange={(e) => setWeightKg(e.target.value)}
+                  placeholder="78.5"
+                />
+              </div>
+              <div className="field grow">
+                <label>Threshold HR (bpm)</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={thresholdHr}
+                  onChange={(e) => setThresholdHr(e.target.value)}
+                  placeholder="172"
+                />
+              </div>
+              <div className="field grow">
+                <label>FTP (W)</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={ftpW}
+                  onChange={(e) => setFtpW(e.target.value)}
+                  placeholder="255"
+                />
+              </div>
+            </div>
+            <button className="btn ghost" type="submit" disabled={settingsSaving}>
+              {settingsSaving ? "Saving…" : "Save my numbers"}
+            </button>
+          </form>
+        </div>
+      )}
 
       <div className="card">
         <h3>Daily points — last 14 days</h3>

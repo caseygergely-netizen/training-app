@@ -70,13 +70,42 @@ into the Log page's "Coach entry" box. Schema:
       "sport": "swimming",            // skiing | running | strength | cycling | swimming
       "date": "2026-10-18",           // YYYY-MM-DD
       "minutes": 65,                  // number > 0
-      "distanceKm": 3.2,              // optional
+      "distanceKm": 3.2,              // optional — decimals fine, e.g. 33.66
       "details": "400 warmup, 8x50 fly @1:10, 4x100 IM, 400 cooldown",
       "difficulty": 1.8,              // REQUIRED, 0.5–2.0, set by you
       "notes": "Held technique through rep 6, died on 7-8"   // optional
     }
 
+Optional extras when you have the data (Strava exports, power meters):
+- "avgHr": average heart rate — feeds the Load metric (hrTSS).
+- "avgPowerW" / "npW": cycling power — feeds Load (TSS) and the PB board.
+- "relativeEffort": Strava's Relative Effort / suffer score — used as Load directly.
+- "maxPower20W": best 20-minute mean-max power — feeds the cycling PB.
+
 The app validates the block and marks the session difficultyBy='ai'.
+
+Every session also gets a Load number (TSS-style), shown next to its points:
+Strava Relative Effort if provided, else cycling TSS from power vs FTP, else
+hrTSS from HR vs the athlete's threshold HR (athletes set weight / threshold
+HR / FTP on their profile), else minutes × difficulty, labelled "est".
+
+C) STANDARD TESTS. When a session is a standard test, add "testType" and a
+"test" result object. Tests feed the Tests & PBs board (latest result, delta
+vs the previous test, and the athlete's personal bests):
+
+- "run5k" (running):      "test": { "time": "19:42" }   (or "timeSec": 1182)
+- "swimCss" (swimming):   "test": { "t400Sec": 320, "t200Sec": 155 }
+                          CSS pace is computed from the two times.
+- "bikeFtp" (cycling):    "test": { "avgPowerW": 268 }
+                          FTP estimate = 0.95 × the 20-min power.
+- "ski10k" (skiing):      "test": { "time": "38:24", "conditions": "cold, fast" }
+                          Always note snow conditions — times are condition-dependent.
+- "strength5rm" (strength):
+    "test": { "lifts": { "squat":    { "weightKg": 120, "reps": 5 },
+                         "bench":    { "weightKg": 85,  "reps": 5 },
+                         "deadlift": { "weightKg": 160, "reps": 5 } } }
+    Estimated 1RMs (Epley) and the combined total are computed by the app.
+    Any subset of the three lifts is fine.
 
 B) MANUAL ENTRY. The athlete fills the Log form themselves. Difficulty
 defaults to 1.0 and the session is flagged "awaiting coach review" in the
@@ -92,7 +121,11 @@ your difficulty score. Consistent judgment beats precision.
 - Leaderboard (home): rolling 14-day totals, trend arrow vs the prior 14 days.
   This is the main competition — bad days age out on their own.
 - Versus: this week's (Mon–Sun) head-to-head for every athlete pair.
-- Feed: session summaries, newest first; tap for full details.
+- Feed: session summaries, newest first; tap for full details. Each session
+  shows its Load next to its points.
+- Tests & PBs: standard test results (latest + delta vs previous) and one
+  personal best per sport. Schedule tests into your athlete's plan — they're
+  the cleanest handicap evidence you get.
 - Profiles: per-athlete 14-day chart, per-sport breakdown, handicap history.
 
 ## 6. Your weekly rhythm (suggested)
