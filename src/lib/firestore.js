@@ -11,6 +11,7 @@ import {
   getDocs,
   setDoc,
   updateDoc,
+  deleteDoc,
   query,
   where,
   orderBy,
@@ -29,7 +30,7 @@ import {
   browserLocalPersistence,
 } from "firebase/auth";
 import { buildSeedData } from "./seed";
-import { computeLoad, handicapAt, sessionPoints, todayStr } from "./points";
+import { clampDifficulty, computeLoad, handicapAt, sessionPoints, todayStr } from "./points";
 
 /* ---------------- hooks ---------------- */
 
@@ -188,6 +189,8 @@ export async function logSession(athlete, fields) {
     createdAt: serverTimestamp(),
   };
 
+  // Source activity ID (duplicate protection) — kept only when provided.
+  if (fields.sourceId) docData.sourceId = String(fields.sourceId);
   // Optional performance data (Strava / power meter / HR) — kept only when
   // provided so older clients and manual entries stay clean.
   for (const key of ["avgHr", "avgPowerW", "npW", "relativeEffort", "maxPower20W", "ftpW", "thresholdHr"]) {
@@ -226,6 +229,43 @@ export async function setSessionDifficulty(session, difficulty, athlete, by = "a
   };
   // Difficulty feeds the fallback load estimate — keep it in sync.
   const load = computeLoad({ ...session, difficulty }, athlete);
+  if (load) {
+    patch.load = load.value;
+    patch.loadSource = load.source;
+  }
+  await updateDoc(doc(db, "sessions", session.id), patch);
+}
+
+/** Athlete deletes one of their own sessions (duplicate, bad paste, wrong date). */
+export async function deleteSession(session) {
+  await deleteDoc(doc(db, "sessions", session.id));
+}
+
+/**
+ * Edit one of the athlete's own sessions (minutes / difficulty / distance /
+ * details / notes). Points and Load are recomputed with the handicap in
+ * effect on the session date, so a typo fix flows through the board
+ * immediately. A difficulty change is marked difficultyBy='athlete'.
+ */
+export async function updateSession(session, fields, athlete) {
+  const minutes = Number(fields.minutes);
+  const difficulty = clampDifficulty(fields.difficulty);
+  const handicap = handicapAt(athlete, session.date);
+  const merged = { ...session, ...fields, minutes, difficulty };
+  const patch = {
+    minutes,
+    difficulty,
+    difficultyBy:
+      Number(session.difficulty) !== difficulty ? "athlete" : session.difficultyBy,
+    distanceKm: fields.distanceKm != null && fields.distanceKm !== "" ? Number(fields.distanceKm) : null,
+    details: String(fields.details || ""),
+    notes: String(fields.notes || ""),
+    handicapUsed: handicap,
+    points: sessionPoints({ minutes, difficulty, handicap }),
+  };
+  if (fields.sourceId !== undefined)
+    patch.sourceId = fields.sourceId ? String(fields.sourceId) : null;
+  const load = computeLoad(merged, athlete);
   if (load) {
     patch.load = load.value;
     patch.loadSource = load.source;

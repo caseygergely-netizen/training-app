@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { useAthletes, useSessions, setSessionDifficulty } from "../lib/firestore.js";
+import { useAthletes, useSessions, setSessionDifficulty, deleteSession, updateSession } from "../lib/firestore.js";
 import {
   SPORT_META,
   TEST_TYPES,
@@ -48,6 +48,152 @@ function RerateControl({ session, athlete }) {
           +
         </button>
       </div>
+      {err && <div className="error" style={{ marginTop: 6 }}>{err}</div>}
+    </div>
+  );
+}
+
+function EditControl({ session, athlete }) {
+  const [editing, setEditing] = useState(false);
+  const [minutes, setMinutes] = useState(String(session.minutes));
+  const [distanceKm, setDistanceKm] = useState(
+    session.distanceKm != null ? String(session.distanceKm) : ""
+  );
+  const [difficulty, setDifficulty] = useState(String(session.difficulty));
+  const [details, setDetails] = useState(session.details || "");
+  const [notes, setNotes] = useState(session.notes || "");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  async function save() {
+    const mins = Number(minutes);
+    if (!(mins > 0)) {
+      setErr("Minutes must be a number greater than 0.");
+      return;
+    }
+    const diff = Number(difficulty);
+    if (Number.isNaN(diff) || diff < 0.5 || diff > 2.0) {
+      setErr("Difficulty must be between 0.5 and 2.0.");
+      return;
+    }
+    setBusy(true);
+    setErr("");
+    try {
+      await updateSession(
+        session,
+        { minutes: mins, distanceKm, difficulty: diff, details, notes },
+        athlete
+      );
+      setEditing(false);
+    } catch (e) {
+      setErr(e.message || "Could not save changes.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!editing) {
+    return (
+      <div style={{ marginTop: 14 }} onClick={(e) => e.stopPropagation()}>
+        <button className="btn ghost" onClick={() => setEditing(true)}>
+          ✏️ Edit this session
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginTop: 14 }} onClick={(e) => e.stopPropagation()}>
+      <div className="row">
+        <div className="field grow">
+          <label>Minutes</label>
+          <input type="number" min="1" value={minutes} onChange={(e) => setMinutes(e.target.value)} />
+        </div>
+        <div className="field grow">
+          <label>Distance (km)</label>
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={distanceKm}
+            onChange={(e) => setDistanceKm(e.target.value)}
+            placeholder="—"
+          />
+        </div>
+        <div className="field grow">
+          <label>Difficulty (0.5–2.0)</label>
+          <input
+            type="number"
+            min="0.5"
+            max="2.0"
+            step="0.1"
+            value={difficulty}
+            onChange={(e) => setDifficulty(e.target.value)}
+          />
+        </div>
+      </div>
+      <div className="field">
+        <label>Workout details</label>
+        <textarea value={details} onChange={(e) => setDetails(e.target.value)} rows={3} />
+      </div>
+      <div className="field">
+        <label>Notes</label>
+        <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
+      </div>
+      <p className="small muted">
+        Saving recomputes this session's points and load with the handicap in
+        effect on its date.
+      </p>
+      {err && <div className="error" style={{ marginBottom: 8 }}>{err}</div>}
+      <div style={{ display: "flex", gap: 10 }}>
+        <button className="btn" disabled={busy} onClick={save}>
+          {busy ? "Saving…" : "Save changes"}
+        </button>
+        <button className="btn ghost" disabled={busy} onClick={() => setEditing(false)}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function DeleteControl({ session }) {
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  async function doDelete() {
+    setBusy(true);
+    setErr("");
+    try {
+      await deleteSession(session);
+    } catch (e) {
+      setErr(e.message || "Could not delete session.");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div style={{ marginTop: 14 }} onClick={(e) => e.stopPropagation()}>
+      {!confirming ? (
+        <button className="btn ghost" onClick={() => setConfirming(true)}>
+          🗑 Delete this session
+        </button>
+      ) : (
+        <div>
+          <div className="small" style={{ marginBottom: 6 }}>
+            Delete this session for good? Its points come off the board right away.
+          </div>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button className="btn" disabled={busy} onClick={doDelete}>
+              {busy ? "Deleting…" : "Yes, delete it"}
+            </button>
+            <button className="btn ghost" disabled={busy} onClick={() => setConfirming(false)}>
+              Keep it
+            </button>
+          </div>
+        </div>
+      )}
       {err && <div className="error" style={{ marginTop: 6 }}>{err}</div>}
     </div>
   );
@@ -131,6 +277,8 @@ function SessionCard({ session, athleteName, isMine, athlete, ownerAthlete }) {
           )}
           {!session.details && !session.notes && !isTest && "No extra details logged."}
           {isMine && athlete && <RerateControl session={session} athlete={athlete} />}
+          {isMine && athlete && <EditControl session={session} athlete={athlete} />}
+          {isMine && <DeleteControl session={session} />}
         </div>
       )}
     </div>

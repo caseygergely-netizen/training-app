@@ -221,6 +221,68 @@ export function weeklyMatchups(sessions, athletes, weekStartStr) {
   return pairs;
 }
 
+/** One week's Mon–Sun totals per athlete: points, sessions, minutes. Ranked. */
+export function weeklyStandings(sessions, athletes, weekStartStr) {
+  const weekEnd = addDays(weekStartStr, 6);
+  const rows = athletes.map((a) => {
+    const mine = sessions.filter(
+      (s) => s.athleteId === a.id && s.date >= weekStartStr && s.date <= weekEnd
+    );
+    return {
+      athlete: a,
+      points: sumPoints(mine),
+      sessions: mine.length,
+      minutes: mine.reduce((t, s) => t + (Number(s.minutes) || 0), 0),
+    };
+  });
+  rows.sort((x, y) => y.points - x.points);
+  return rows.map((r, i) => ({ ...r, rank: i + 1 }));
+}
+
+/**
+ * Trophy winners for every COMPLETED Mon–Sun week (newest first).
+ * A week counts when its Monday is before the current week's Monday and the
+ * top score is > 0. Ties share the trophy.
+ * Returns [{ weekStart, weekEnd, points, winners: [athlete, ...] }].
+ */
+export function weeklyWinners(sessions, athletes, asOf = todayStr()) {
+  if (!sessions || sessions.length === 0) return [];
+  const currentMonday = mondayOf(asOf);
+  let firstMonday = null;
+  for (const s of sessions) {
+    const m = mondayOf(s.date);
+    if (firstMonday === null || m < firstMonday) firstMonday = m;
+  }
+  const out = [];
+  for (let wk = firstMonday; wk < currentMonday; wk = addDays(wk, 7)) {
+    const rows = weeklyStandings(sessions, athletes, wk);
+    const top = rows[0];
+    if (top && top.points > 0) {
+      out.push({
+        weekStart: wk,
+        weekEnd: addDays(wk, 6),
+        points: top.points,
+        winners: rows.filter((r) => r.points === top.points).map((r) => r.athlete),
+      });
+    }
+  }
+  return out.sort((a, b) => (a.weekStart < b.weekStart ? 1 : -1));
+}
+
+/** All-time per-sport totals for one athlete: { sport: {points, sessions, minutes} }. */
+export function pointsBySport(sessions, athleteId) {
+  const out = {};
+  for (const s of sessions) {
+    if (s.athleteId !== athleteId) continue;
+    const cur = out[s.sport] || { points: 0, sessions: 0, minutes: 0 };
+    cur.points = round1(cur.points + (Number(s.points) || 0));
+    cur.sessions += 1;
+    cur.minutes += Number(s.minutes) || 0;
+    out[s.sport] = cur;
+  }
+  return out;
+}
+
 /* ---------------- streaks & hype badges ---------------- */
 
 /** Consecutive training days per athlete, ending today or yesterday. */
@@ -343,22 +405,43 @@ export function displayLoad(session, athlete) {
 /* ---------------- standard test sets ---------------- */
 
 /**
- * Standard tests, one per sport. Test sessions are normal sessions with a
- * testType and a structured `test` result object:
- *  - run5k:     test = { timeSec }
+ * Standard tests. Test sessions are normal sessions with a testType and a
+ * structured `test` result object. Each type is tagged aerobic or anaerobic
+ * so the PB board can show both engines per sport.
+ *  - run5k / run10k / run1k / run400m:  test = { timeSec }
  *  - swimCss:   test = { t400Sec, t200Sec }       (CSS pace derived)
- *  - bikeFtp:   test = { avgPowerW, ftpEstimateW }
- *  - ski10k:    test = { timeSec, conditions }
+ *  - swim1500 / swim100 / swim50:       test = { timeSec }
+ *  - bikeFtp / bike60min / bike5min / bike1min / bike5s:
+ *                                       test = { avgPowerW } (ftpEstimateW on bikeFtp)
+ *  - ski10k / ski1k:                    test = { timeSec, conditions }
  *  - strength5rm: test = { lifts: { squat|bench|deadlift: {weightKg, reps} },
  *                          oneRm: { squat, bench, deadlift, totalKg } }
+ *  - strengthBestSet: test = { label, weightKg, reps }  (est. 1RM derived)
  */
 export const TEST_TYPES = {
-  run5k: { sport: "running", label: "5 km time trial", short: "5K TT" },
-  swimCss: { sport: "swimming", label: "CSS test — 400 m + 200 m", short: "CSS test" },
-  bikeFtp: { sport: "cycling", label: "20-min FTP test", short: "20-min FTP" },
-  ski10k: { sport: "skiing", label: "10 km time trial", short: "10K TT" },
-  strength5rm: { sport: "strength", label: "5RM test day", short: "5RM day" },
+  run5k: { sport: "running", kind: "aerobic", label: "5 km time trial", short: "5K TT" },
+  run10k: { sport: "running", kind: "aerobic", label: "10 km time trial", short: "10K TT" },
+  run1k: { sport: "running", kind: "anaerobic", label: "1 km time trial", short: "1K TT" },
+  run400m: { sport: "running", kind: "anaerobic", label: "400 m sprint", short: "400 m" },
+  swimCss: { sport: "swimming", kind: "aerobic", label: "CSS test — 400 m + 200 m", short: "CSS test" },
+  swim1500: { sport: "swimming", kind: "aerobic", label: "1500 m time trial", short: "1500 m TT" },
+  swim100: { sport: "swimming", kind: "anaerobic", label: "100 m sprint", short: "100 m" },
+  swim50: { sport: "swimming", kind: "anaerobic", label: "50 m sprint", short: "50 m" },
+  bikeFtp: { sport: "cycling", kind: "aerobic", label: "20-min FTP test", short: "20-min FTP" },
+  bike60min: { sport: "cycling", kind: "aerobic", label: "60-min power test", short: "60-min power" },
+  bike5min: { sport: "cycling", kind: "anaerobic", label: "5-min power test", short: "5-min power" },
+  bike1min: { sport: "cycling", kind: "anaerobic", label: "1-min power test", short: "1-min power" },
+  bike5s: { sport: "cycling", kind: "anaerobic", label: "5-s power test", short: "5-s power" },
+  ski10k: { sport: "skiing", kind: "aerobic", label: "10 km time trial", short: "10K TT" },
+  ski1k: { sport: "skiing", kind: "anaerobic", label: "1 km time trial", short: "1K TT" },
+  strength5rm: { sport: "strength", kind: "anaerobic", label: "5RM test day", short: "5RM day" },
+  strengthBestSet: { sport: "strength", kind: "anaerobic", label: "Best single set", short: "Best set" },
 };
+
+/** Test types whose result is a single clock time { timeSec } (ski types add conditions). */
+export const TIME_TEST_TYPES = ["run5k", "run10k", "run1k", "run400m", "swim1500", "swim100", "swim50", "ski10k", "ski1k"];
+/** Test types whose result is a power number { avgPowerW }. */
+export const POWER_TEST_TYPES = ["bikeFtp", "bike60min", "bike5min", "bike1min", "bike5s"];
 
 export function testTypesForSport(sport) {
   return Object.entries(TEST_TYPES)
@@ -388,11 +471,14 @@ const LIFT_LABELS = { squat: "Squat", bench: "Bench", deadlift: "Deadlift" };
 /** Human headline for a test session, e.g. "5K TT — 19:42". */
 export function testHeadline(session) {
   const t = session?.test || {};
-  switch (session?.testType) {
-    case "run5k":
-      return t.timeSec ? `5K TT — ${formatDuration(t.timeSec)}` : "5K TT";
-    case "ski10k":
-      return t.timeSec ? `10K TT — ${formatDuration(t.timeSec)}` : "10K TT";
+  const type = session?.testType;
+  const meta = TEST_TYPES[type];
+  if (TIME_TEST_TYPES.includes(type)) {
+    return t.timeSec
+      ? `${meta.short} — ${formatDuration(t.timeSec)}`
+      : meta.label;
+  }
+  switch (type) {
     case "swimCss": {
       const pace = cssPacePer100(t);
       return pace != null
@@ -407,8 +493,15 @@ export function testHeadline(session) {
       return t.oneRm?.totalKg
         ? `Est. 1RM total ${Math.round(t.oneRm.totalKg)} kg`
         : "5RM test day";
+    case "strengthBestSet":
+      return t.weightKg
+        ? `${t.label || "Best set"}: ${t.weightKg} kg × ${t.reps} (est. 1RM ${Math.round(epley1RM(t.weightKg, t.reps))} kg)`
+        : "Best single set";
     default:
-      return TEST_TYPES[session?.testType]?.label || "Test";
+      if (POWER_TEST_TYPES.includes(type)) {
+        return t.avgPowerW ? `${meta.short} ${Math.round(t.avgPowerW)} W` : meta.label;
+      }
+      return meta?.label || "Test";
   }
 }
 
@@ -416,7 +509,7 @@ export function testHeadline(session) {
 export function testDetailLines(session) {
   const t = session?.test || {};
   const lines = [];
-  if (session?.testType === "ski10k" && t.conditions)
+  if ((session?.testType === "ski10k" || session?.testType === "ski1k") && t.conditions)
     lines.push(`Snow: ${t.conditions} (times are condition-dependent)`);
   if (session?.testType === "strength5rm" && t.lifts) {
     for (const lift of Object.keys(LIFT_LABELS)) {
@@ -438,18 +531,24 @@ export function testDetailLines(session) {
  */
 export function testMetric(session) {
   const t = session?.test || {};
-  switch (session?.testType) {
-    case "run5k":
-    case "ski10k":
-      return t.timeSec ? { value: Number(t.timeSec), kind: "time" } : null;
+  const type = session?.testType;
+  if (TIME_TEST_TYPES.includes(type)) {
+    return t.timeSec ? { value: Number(t.timeSec), kind: "time" } : null;
+  }
+  if (POWER_TEST_TYPES.includes(type)) {
+    return t.avgPowerW ? { value: Number(t.avgPowerW), kind: "power" } : null;
+  }
+  switch (type) {
     case "swimCss": {
       const pace = cssPacePer100(t);
       return pace != null ? { value: pace, kind: "time" } : null;
     }
-    case "bikeFtp":
-      return t.avgPowerW ? { value: Number(t.avgPowerW), kind: "power" } : null;
     case "strength5rm":
       return t.oneRm?.totalKg ? { value: Number(t.oneRm.totalKg), kind: "weight" } : null;
+    case "strengthBestSet":
+      return t.weightKg
+        ? { value: epley1RM(t.weightKg, t.reps), kind: "weight" }
+        : null;
     default:
       return null;
   }
@@ -567,6 +666,43 @@ export function computePBs(sessions, athlete) {
     out.ski10k = best;
   }
 
+  // --- extended test PBs (batch: aerobic + anaerobic per sport) ---
+  // For every remaining test type, take the athlete's best result:
+  // lowest time, highest power / weight. Entry: { value, kind, date, label? }.
+  const bestOf = (type) => {
+    let best = null;
+    for (const s of mine) {
+      if (s.testType !== type) continue;
+      const m = testMetric(s);
+      if (!m) continue;
+      const better =
+        !best || (m.kind === "time" ? m.value < best.value : m.value > best.value);
+      if (better)
+        best = { value: m.value, kind: m.kind, date: s.date, label: s.test?.label || "" };
+    }
+    return best;
+  };
+  for (const type of [
+    "run10k", "run1k", "run400m",
+    "swim1500", "swim100", "swim50",
+    "bike60min", "bike5min", "bike1min", "bike5s",
+    "ski1k", "strengthBestSet",
+  ]) {
+    out[type] = bestOf(type);
+  }
+  // CSS pace from swimCss tests (pace, not the raw 400 time).
+  out.swimCssPace = bestOf("swimCss");
+  // Per-lift best estimated 1RM across all strength5rm tests.
+  for (const lift of ["squat", "bench", "deadlift"]) {
+    let best = null;
+    for (const s of mine) {
+      if (s.testType !== "strength5rm") continue;
+      const v = Number(s.test?.oneRm?.[lift]) || 0;
+      if (v > 0 && (!best || v > best.value)) best = { value: round1(v), date: s.date };
+    }
+    out[`lift_${lift}`] = best;
+  }
+
   // --- strength 1RM total ---
   const strengthTests = mine.filter(
     (s) => s.testType === "strength5rm" && s.test?.oneRm?.totalKg
@@ -603,36 +739,75 @@ const COACH_SCHEMA = {
   npW: "number, optional — normalized power in watts (cycling)",
   relativeEffort: "number, optional — Strava Relative Effort / suffer score (used as Load)",
   maxPower20W: "number, optional — best 20-min mean-max power in watts (feeds the PB board)",
+  sourceId:
+    "string, optional — the source activity ID (e.g. Strava activity number). Strongly recommended: the app blocks a second session with the same sourceId for the same athlete (duplicate protection)",
   testType:
-    "optional — one of: run5k | swimCss | bikeFtp | ski10k | strength5rm (must match sport)",
+    "optional — one of: run5k | run10k | run1k | run400m | swimCss | swim1500 | swim100 | swim50 | bikeFtp | bike60min | bike5min | bike1min | bike5s | ski10k | ski1k | strength5rm | strengthBestSet (must match sport)",
   test: "object, optional — required when testType is set; shape depends on the test (see below)",
   "test shapes": {
-    run5k: '{ timeSec: seconds, or time: "MM:SS" }',
+    "time tests (run5k, run10k, run1k, run400m, swim1500, swim100, swim50)":
+      '{ timeSec: seconds, or time: "MM:SS" }',
     swimCss: '{ t400Sec, t200Sec } — the 400 m and 200 m times in seconds (or "M:SS")',
-    bikeFtp: "{ avgPowerW } — average power for the 20-min test; FTP estimate = 0.95 × power",
-    ski10k: '{ timeSec (or time: "MM:SS"), conditions: "snow conditions, free text" }',
+    "power tests (bikeFtp, bike60min, bike5min, bike1min, bike5s)":
+      "{ avgPowerW } — mean-max power for the duration; FTP estimate = 0.95 × power (bikeFtp only)",
+    "ski tests (ski10k, ski1k)":
+      '{ timeSec (or time: "MM:SS"), conditions: "snow conditions, free text" }',
     strength5rm:
       "{ lifts: { squat: {weightKg, reps}, bench: {weightKg, reps}, deadlift: {weightKg, reps} } } — any subset",
+    strengthBestSet:
+      '{ label: "Weighted pull-up", weightKg, reps } — best single set of any movement',
   },
 };
+
+/**
+ * Source activity ID for duplicate protection: an explicit sourceId wins;
+ * otherwise pull "Strava 20759801918" / "strava: 123456" style IDs out of
+ * the details text.
+ */
+export function extractSourceId(details, sourceId) {
+  const explicit = String(sourceId || "").trim();
+  if (explicit) return explicit;
+  const m = String(details || "").match(
+    /(?:strava|garmin|activity)\s*(?:id)?\s*[:#]?\s*(\d{6,})/i
+  );
+  return m ? m[1] : "";
+}
+
+/** An existing session of this athlete carrying the same source ID, or null. */
+export function findDuplicateSession(sessions, athleteId, sourceId, excludeId = null) {
+  const id = String(sourceId || "").trim();
+  if (!id) return null;
+  return (
+    sessions.find(
+      (s) =>
+        s.athleteId === athleteId &&
+        s.id !== excludeId &&
+        extractSourceId(s.details, s.sourceId) === id
+    ) || null
+  );
+}
 
 /** Validate + normalize a test result object. Returns { test } or { problem }. */
 export function cleanTestResult(testType, raw) {
   if (raw == null || typeof raw !== "object")
     return { problem: `testType "${testType}" needs a "test" object with the result` };
+  if (TIME_TEST_TYPES.includes(testType)) {
+    const timeSec = parseClock(raw.timeSec ?? raw.time);
+    if (!timeSec)
+      return { problem: `${testType} test needs timeSec (seconds) or time ("MM:SS")` };
+    const test = { timeSec: Math.round(timeSec) };
+    if (testType === "ski10k" || testType === "ski1k")
+      test.conditions = String(raw.conditions || "");
+    return { test };
+  }
+  if (POWER_TEST_TYPES.includes(testType)) {
+    const avgPowerW = Number(raw.avgPowerW ?? raw.powerW);
+    if (!(avgPowerW > 0)) return { problem: `${testType} test needs avgPowerW > 0` };
+    const test = { avgPowerW: Math.round(avgPowerW) };
+    if (testType === "bikeFtp") test.ftpEstimateW = Math.round(avgPowerW * 0.95);
+    return { test };
+  }
   switch (testType) {
-    case "run5k": {
-      const timeSec = parseClock(raw.timeSec ?? raw.time);
-      if (!timeSec) return { problem: 'run5k test needs timeSec (seconds) or time ("MM:SS")' };
-      return { test: { timeSec: Math.round(timeSec) } };
-    }
-    case "ski10k": {
-      const timeSec = parseClock(raw.timeSec ?? raw.time);
-      if (!timeSec) return { problem: 'ski10k test needs timeSec (seconds) or time ("MM:SS")' };
-      return {
-        test: { timeSec: Math.round(timeSec), conditions: String(raw.conditions || "") },
-      };
-    }
     case "swimCss": {
       const t400Sec = parseClock(raw.t400Sec ?? raw.t400);
       const t200Sec = parseClock(raw.t200Sec ?? raw.t200);
@@ -642,12 +817,14 @@ export function cleanTestResult(testType, raw) {
         return { problem: "swimCss: the 400 m time must be longer than the 200 m time" };
       return { test: { t400Sec: Math.round(t400Sec), t200Sec: Math.round(t200Sec) } };
     }
-    case "bikeFtp": {
-      const avgPowerW = Number(raw.avgPowerW);
-      if (!(avgPowerW > 0)) return { problem: "bikeFtp test needs avgPowerW > 0" };
-      return {
-        test: { avgPowerW: Math.round(avgPowerW), ftpEstimateW: Math.round(avgPowerW * 0.95) },
-      };
+    case "strengthBestSet": {
+      const label = String(raw.label || "").trim();
+      const weightKg = Number(raw.weightKg);
+      const reps = Number(raw.reps);
+      if (!label) return { problem: "strengthBestSet test needs a label (which lift / movement)" };
+      if (!(weightKg > 0) || !(reps > 0))
+        return { problem: "strengthBestSet test needs weightKg and reps > 0" };
+      return { test: { label, weightKg, reps } };
     }
     case "strength5rm": {
       const lifts = {};
@@ -745,6 +922,7 @@ export function parseCoachBlock(text) {
     difficulty: clampDifficulty(diff),
     difficultyBy: "ai",
     notes: String(obj.notes || ""),
+    sourceId: extractSourceId(String(obj.details || ""), obj.sourceId),
     ...perf,
     testType,
     test,

@@ -21,6 +21,10 @@ import {
   dailyPoints,
   addDays,
   todayStr,
+  prettyDate,
+  pointsBySport,
+  weeklyWinners,
+  SPORTS,
   SPORT_META,
   round1,
 } from "../lib/points.js";
@@ -84,15 +88,24 @@ export default function AthleteProfile() {
   const totalMinutes = last14.reduce((t, s) => t + Number(s.minutes || 0), 0);
 
   const bySport = {};
+  const bySportCount = {};
   for (const s of last14) {
     bySport[s.sport] = (bySport[s.sport] || 0) + Number(s.points || 0);
+    bySportCount[s.sport] = (bySportCount[s.sport] || 0) + 1;
   }
   const pieData = Object.entries(bySport)
     .map(([sport, points]) => ({
       name: SPORT_META[sport]?.label || sport,
+      sport,
+      count: bySportCount[sport] || 0,
       value: round1(points),
     }))
     .sort((a, b) => b.value - a.value);
+
+  const allTimeBySport = pointsBySport(sessions, id);
+  const trophies = weeklyWinners(sessions, athletes).filter((w) =>
+    w.winners.some((a) => a.id === id)
+  );
 
   const history = [...(athlete.handicapHistory || [])].sort((a, b) =>
     a.effectiveFrom < b.effectiveFrom ? 1 : -1
@@ -174,6 +187,31 @@ export default function AthleteProfile() {
           <div className="t">Minutes · 14d</div>
           <div className="v" style={{ fontSize: 18 }}>{totalMinutes}</div>
         </div>
+      </div>
+
+      <div className="card">
+        <h3>🏆 Trophies — {trophies.length} weekly win{trophies.length === 1 ? "" : "s"}</h3>
+        {trophies.length === 0 ? (
+          <p className="muted small">
+            No weekly race wins yet. Trophies go to whoever tops the Versus
+            racetrack when the week closes Sunday night.
+          </p>
+        ) : (
+          trophies.slice(0, 12).map((w) => (
+            <div className="hist-row" key={w.weekStart}>
+              <div>
+                🏆 Week of {prettyDate(w.weekStart)}
+                <div className="small muted">
+                  {w.winners.length > 1 ? "Shared win · " : ""}won with {w.points} pts
+                </div>
+              </div>
+              <div style={{ fontSize: 18 }}>🏆</div>
+            </div>
+          ))
+        )}
+        {trophies.length > 12 && (
+          <p className="small muted">…and {trophies.length - 12} earlier wins.</p>
+        )}
       </div>
 
       {isMe && (
@@ -274,10 +312,29 @@ export default function AthleteProfile() {
                   <span className="k">
                     <span style={{ color: PIE_COLORS[i % PIE_COLORS.length] }}>●</span> {d.name}
                   </span>
-                  <span className="v">{d.value} pts</span>
+                  <span className="v">
+                    {d.value} pts · {d.count} session{d.count === 1 ? "" : "s"}
+                  </span>
                 </div>
               ))}
             </div>
+          </>
+        )}
+        {SPORTS.some((s) => allTimeBySport[s]) && (
+          <>
+            <hr className="divider" />
+            <p className="small muted" style={{ marginTop: 0 }}>All time</p>
+            {SPORTS.filter((s) => allTimeBySport[s]).map((s) => (
+              <div className="kv" key={s}>
+                <span className="k">
+                  {SPORT_META[s].icon} {SPORT_META[s].label}
+                </span>
+                <span className="v">
+                  {allTimeBySport[s].points} pts · {allTimeBySport[s].sessions} session
+                  {allTimeBySport[s].sessions === 1 ? "" : "s"} · {allTimeBySport[s].minutes} min
+                </span>
+              </div>
+            ))}
           </>
         )}
       </div>

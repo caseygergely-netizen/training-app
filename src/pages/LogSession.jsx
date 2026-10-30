@@ -1,15 +1,20 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../App.jsx";
-import { logSession } from "../lib/firestore.js";
+import { logSession, useSessions } from "../lib/firestore.js";
 import {
   SPORTS,
   SPORT_META,
   TEST_TYPES,
+  TIME_TEST_TYPES,
+  POWER_TEST_TYPES,
   parseCoachBlock,
   cleanTestResult,
   computeLoad,
+  extractSourceId,
+  findDuplicateSession,
   formatKm,
+  prettyDate,
   todayStr,
   sessionPoints,
   handicapAt,
@@ -19,6 +24,7 @@ const LIFTS = ["squat", "bench", "deadlift"];
 
 export default function LogSession() {
   const { athlete } = useAuth();
+  const { sessions } = useSessions();
   const navigate = useNavigate();
 
   const [sport, setSport] = useState("running");
@@ -37,7 +43,11 @@ export default function LogSession() {
   const [skiConditions, setSkiConditions] = useState("");
   const [t400, setT400] = useState(""); // swimCss
   const [t200, setT200] = useState("");
-  const [testPower, setTestPower] = useState(""); // bikeFtp 20-min avg power
+  const [testPower, setTestPower] = useState(""); // power tests: avg / mean-max power
+  const [bestSetLabel, setBestSetLabel] = useState(""); // strengthBestSet
+  const [bestSetWeight, setBestSetWeight] = useState("");
+  const [bestSetReps, setBestSetReps] = useState("");
+  const [sourceId, setSourceId] = useState(""); // duplicate protection (Strava ID etc.)
   const [lifts, setLifts] = useState({
     squat: { weightKg: "", reps: "" },
     bench: { weightKg: "", reps: "" },
@@ -65,12 +75,14 @@ export default function LogSession() {
       setAvgHr(parsed.avgHr != null ? String(parsed.avgHr) : "");
       setAvgPowerW(parsed.avgPowerW != null ? String(parsed.avgPowerW) : "");
       setRelativeEffort(parsed.relativeEffort != null ? String(parsed.relativeEffort) : "");
+      setSourceId(parsed.sourceId || "");
       // Test result from the block, if any.
       setTestType(parsed.testType || "");
-      if (parsed.testType === "run5k" || parsed.testType === "ski10k") {
+      if (TIME_TEST_TYPES.includes(parsed.testType)) {
         const sec = parsed.test?.timeSec || 0;
         setTestTime(sec ? `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}` : "");
-        if (parsed.testType === "ski10k") setSkiConditions(parsed.test?.conditions || "");
+        if (parsed.testType === "ski10k" || parsed.testType === "ski1k")
+          setSkiConditions(parsed.test?.conditions || "");
       }
       if (parsed.testType === "swimCss") {
         const f = (sec) =>
@@ -78,9 +90,15 @@ export default function LogSession() {
         setT400(f(parsed.test?.t400Sec));
         setT200(f(parsed.test?.t200Sec));
       }
-      if (parsed.testType === "bikeFtp") {
+      if (POWER_TEST_TYPES.includes(parsed.testType)) {
         setTestPower(parsed.test?.avgPowerW ? String(parsed.test.avgPowerW) : "");
-        if (parsed.test?.avgPowerW) setAvgPowerW(String(parsed.test.avgPowerW));
+        if (parsed.testType === "bikeFtp" && parsed.test?.avgPowerW)
+          setAvgPowerW(String(parsed.test.avgPowerW));
+      }
+      if (parsed.testType === "strengthBestSet" && parsed.test) {
+        setBestSetLabel(parsed.test.label || "");
+        setBestSetWeight(parsed.test.weightKg ? String(parsed.test.weightKg) : "");
+        setBestSetReps(parsed.test.reps ? String(parsed.test.reps) : "");
       }
       if (parsed.testType === "strength5rm" && parsed.test?.lifts) {
         setLifts((prev) => {
@@ -101,15 +119,23 @@ export default function LogSession() {
 
   /** Build the raw test object from the form; cleanTestResult validates it. */
   function rawTestFromForm() {
+    if (TIME_TEST_TYPES.includes(testType)) {
+      return testType === "ski10k" || testType === "ski1k"
+        ? { time: testTime, conditions: skiConditions }
+        : { time: testTime };
+    }
+    if (POWER_TEST_TYPES.includes(testType)) {
+      return { avgPowerW: Number(testPower) };
+    }
     switch (testType) {
-      case "run5k":
-        return { time: testTime };
-      case "ski10k":
-        return { time: testTime, conditions: skiConditions };
       case "swimCss":
         return { t400, t200 };
-      case "bikeFtp":
-        return { avgPowerW: Number(testPower) };
+      case "strengthBestSet":
+        return {
+          label: bestSetLabel,
+          weightKg: Number(bestSetWeight),
+          reps: Number(bestSetReps),
+        };
       case "strength5rm": {
         const out = {};
         for (const lift of LIFTS) {
@@ -137,6 +163,16 @@ export default function LogSession() {
       return;
     }
 
+    // Duplicate protection: one session per source activity ID per athlete.
+    const sid = extractSourceId(details, sourceId);
+    const dup = findDuplicateSession(sessions, athlete.id, sid);
+    if (dup) {
+      setError(
+        `Duplicate blocked — source ID ${sid} is already logged (${SPORT_META[dup.sport]?.label || dup.sport}, ${prettyDate(dup.date)}). If this is a correction, edit or delete that entry in the Feed instead.`
+      );
+      return;
+    }
+
     // Test section is optional; when a type is picked, it must be valid.
     let testFields = {};
     if (testType) {
@@ -161,6 +197,7 @@ export default function LogSession() {
         avgHr: num(avgHr),
         avgPowerW: num(avgPowerW),
         relativeEffort: num(relativeEffort),
+        sourceId: extractSourceId(details, sourceId) || undefined,
         ...testFields,
         // Difficulty comes from the coach block when present; otherwise the
         // manual default (1.0, flagged for coach review).
@@ -198,6 +235,11 @@ export default function LogSession() {
           athlete
         )
       : null;
+
+  const currentSourceId = extractSourceId(details, sourceId);
+  const duplicate = athlete
+    ? findDuplicateSession(sessions, athlete.id, currentSourceId)
+    : null;
 
   const testOptions = Object.entries(TEST_TYPES).filter(
     ([, t]) => t.sport === sport
@@ -399,9 +441,9 @@ export default function LogSession() {
             </div>
           </div>
 
-          {(testType === "run5k" || testType === "ski10k") && (
+          {TIME_TEST_TYPES.includes(testType) && (
             <div className="field">
-              <label>{testType === "run5k" ? "5 km time" : "10 km time"} (MM:SS)</label>
+              <label>{TEST_TYPES[testType].label} — time (MM:SS)</label>
               <input
                 value={testTime}
                 onChange={(e) => setTestTime(e.target.value)}
@@ -409,7 +451,7 @@ export default function LogSession() {
               />
             </div>
           )}
-          {testType === "ski10k" && (
+          {(testType === "ski10k" || testType === "ski1k") && (
             <div className="field">
               <label>Snow conditions</label>
               <input
@@ -439,9 +481,9 @@ export default function LogSession() {
               </div>
             </div>
           )}
-          {testType === "bikeFtp" && (
+          {POWER_TEST_TYPES.includes(testType) && (
             <div className="field">
-              <label>Average power for the 20 minutes (W)</label>
+              <label>Average / mean-max power for the effort (W)</label>
               <input
                 type="number"
                 min="0"
@@ -449,10 +491,47 @@ export default function LogSession() {
                 onChange={(e) => setTestPower(e.target.value)}
                 placeholder="268"
               />
-              <p className="small muted" style={{ marginTop: 6 }}>
-                FTP estimate = 0.95 × this number, shown on the Tests page.
-              </p>
+              {testType === "bikeFtp" && (
+                <p className="small muted" style={{ marginTop: 6 }}>
+                  FTP estimate = 0.95 × this number, shown on the Tests page.
+                </p>
+              )}
             </div>
+          )}
+          {testType === "strengthBestSet" && (
+            <>
+              <div className="field">
+                <label>Movement (e.g. Weighted pull-up, Front squat)</label>
+                <input
+                  value={bestSetLabel}
+                  onChange={(e) => setBestSetLabel(e.target.value)}
+                  placeholder="Weighted pull-up"
+                />
+              </div>
+              <div className="row">
+                <div className="field grow">
+                  <label>Weight (kg)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.5"
+                    value={bestSetWeight}
+                    onChange={(e) => setBestSetWeight(e.target.value)}
+                    placeholder="20"
+                  />
+                </div>
+                <div className="field grow">
+                  <label>Reps</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={bestSetReps}
+                    onChange={(e) => setBestSetReps(e.target.value)}
+                    placeholder="5"
+                  />
+                </div>
+              </div>
+            </>
           )}
           {testType === "strength5rm" && (
             <>
@@ -520,8 +599,22 @@ export default function LogSession() {
               {previewPoints != null ? previewPoints : "—"}
             </span>
           </div>
+          {currentSourceId && (
+            <div className="kv" style={{ marginBottom: 12 }}>
+              <span className="k">Source ID</span>
+              <span className="v">{currentSourceId}</span>
+            </div>
+          )}
+          {duplicate && (
+            <div className="error" style={{ marginBottom: 12 }}>
+              ⚠️ Source ID {currentSourceId} is already logged (
+              {SPORT_META[duplicate.sport]?.label || duplicate.sport},{" "}
+              {prettyDate(duplicate.date)}). Submitting will be blocked — edit
+              or delete that entry in the Feed if this is a correction.
+            </div>
+          )}
 
-          <button className="btn" type="submit" disabled={saving}>
+          <button className="btn" type="submit" disabled={saving || Boolean(duplicate)}>
             {saving ? "Saving…" : "Log session"}
           </button>
         </div>

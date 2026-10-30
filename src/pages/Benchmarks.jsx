@@ -1,38 +1,184 @@
-import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useAthletes, useSessions } from "../lib/firestore.js";
-import { useAuth } from "../App.jsx";
 import {
-  TEST_TYPES,
+  SPORTS,
+  SPORT_META,
   computePBs,
   testsOfType,
   testHeadline,
-  testDetailLines,
   testDelta,
   formatDuration,
   prettyDate,
+  round1,
+  round2,
 } from "../lib/points.js";
 
-function PbRow({ icon, label, value, date, estimated, note }) {
+/**
+ * PB metrics per sport — aerobic + anaerobic. `get(pbs, athlete)` returns
+ * { text, date, estimated?, note? } or null when the athlete has no mark.
+ * Classic five come from computePBs (tests, with pace-scaled estimates where
+ * a test hasn't been logged); the extended set is test-only.
+ */
+const METRICS = {
+  running: [
+    {
+      key: "run5k", label: "Best 5 km", kind: "aerobic",
+      get: (p) => p.run5k && { text: formatDuration(p.run5k.seconds), date: p.run5k.date, estimated: p.run5k.estimated },
+    },
+    {
+      key: "run10k", label: "Best 10 km", kind: "aerobic",
+      get: (p) => p.run10k && { text: formatDuration(p.run10k.value), date: p.run10k.date },
+    },
+    {
+      key: "run1k", label: "Best 1 km", kind: "anaerobic",
+      get: (p) => p.run1k && { text: formatDuration(p.run1k.value), date: p.run1k.date },
+    },
+    {
+      key: "run400m", label: "Best 400 m", kind: "anaerobic",
+      get: (p) => p.run400m && { text: formatDuration(p.run400m.value), date: p.run400m.date },
+    },
+  ],
+  swimming: [
+    {
+      key: "swim400", label: "Best 400 m", kind: "aerobic",
+      get: (p) => p.swim400 && { text: formatDuration(p.swim400.seconds), date: p.swim400.date, estimated: p.swim400.estimated },
+    },
+    {
+      key: "swim1500", label: "Best 1500 m", kind: "aerobic",
+      get: (p) => p.swim1500 && { text: formatDuration(p.swim1500.value), date: p.swim1500.date },
+    },
+    {
+      key: "swimCssPace", label: "CSS pace (per 100 m)", kind: "aerobic",
+      get: (p) => p.swimCssPace && { text: formatDuration(p.swimCssPace.value), date: p.swimCssPace.date },
+    },
+    {
+      key: "swim100", label: "Best 100 m", kind: "anaerobic",
+      get: (p) => p.swim100 && { text: formatDuration(p.swim100.value), date: p.swim100.date },
+    },
+    {
+      key: "swim50", label: "Best 50 m", kind: "anaerobic",
+      get: (p) => p.swim50 && { text: formatDuration(p.swim50.value), date: p.swim50.date },
+    },
+  ],
+  cycling: [
+    {
+      key: "bike20min", label: "Best 20-min power", kind: "aerobic",
+      get: (p) =>
+        p.bike20min && {
+          text: `${p.bike20min.watts} W${p.bike20min.wPerKg ? ` · ${p.bike20min.wPerKg} W/kg` : ""}`,
+          date: p.bike20min.date,
+          estimated: p.bike20min.estimated,
+          note: !p.bike20min.wPerKg ? "no weight on file for W/kg" : "",
+        },
+    },
+    {
+      key: "bike60min", label: "Best 60-min power", kind: "aerobic",
+      get: (p, a) => powerText(p.bike60min, a),
+    },
+    {
+      key: "bike5min", label: "Best 5-min power", kind: "anaerobic",
+      get: (p, a) => powerText(p.bike5min, a),
+    },
+    {
+      key: "bike1min", label: "Best 1-min power", kind: "anaerobic",
+      get: (p, a) => powerText(p.bike1min, a),
+    },
+    {
+      key: "bike5s", label: "Best 5-s power", kind: "anaerobic",
+      get: (p, a) => powerText(p.bike5s, a),
+    },
+  ],
+  skiing: [
+    {
+      key: "ski10k", label: "Best 10 km", kind: "aerobic",
+      get: (p) =>
+        p.ski10k && {
+          text: formatDuration(p.ski10k.seconds),
+          date: p.ski10k.date,
+          estimated: p.ski10k.estimated,
+          note: "condition-dependent",
+        },
+    },
+    {
+      key: "ski1k", label: "Best 1 km", kind: "anaerobic",
+      get: (p) => p.ski1k && { text: formatDuration(p.ski1k.value), date: p.ski1k.date, note: "condition-dependent" },
+    },
+  ],
+  strength: [
+    {
+      key: "strengthTotal", label: "Est. 1RM total (S+B+D)", kind: "anaerobic",
+      get: (p) =>
+        p.strengthTotal && {
+          text: `${Math.round(p.strengthTotal.totalKg)} kg`,
+          date: p.strengthTotal.date,
+          note: `S ${Math.round(p.strengthTotal.squat)} · B ${Math.round(p.strengthTotal.bench)} · D ${Math.round(p.strengthTotal.deadlift)} kg`,
+        },
+    },
+    {
+      key: "lift_squat", label: "Est. 1RM — squat", kind: "anaerobic",
+      get: (p) => p.lift_squat && { text: `${round1(p.lift_squat.value)} kg`, date: p.lift_squat.date },
+    },
+    {
+      key: "lift_bench", label: "Est. 1RM — bench", kind: "anaerobic",
+      get: (p) => p.lift_bench && { text: `${round1(p.lift_bench.value)} kg`, date: p.lift_bench.date },
+    },
+    {
+      key: "lift_deadlift", label: "Est. 1RM — deadlift", kind: "anaerobic",
+      get: (p) => p.lift_deadlift && { text: `${round1(p.lift_deadlift.value)} kg`, date: p.lift_deadlift.date },
+    },
+    {
+      key: "strengthBestSet", label: "Best single set (est. 1RM)", kind: "anaerobic",
+      get: (p) =>
+        p.strengthBestSet && {
+          text: `${round1(p.strengthBestSet.value)} kg`,
+          date: p.strengthBestSet.date,
+          note: p.strengthBestSet.label || "",
+        },
+    },
+  ],
+};
+
+function powerText(entry, athlete) {
+  if (!entry) return null;
+  const wkg = Number(athlete?.weightKg) > 0 ? round2(entry.value / Number(athlete.weightKg)) : null;
+  return {
+    text: `${Math.round(entry.value)} W${wkg ? ` · ${wkg} W/kg` : ""}`,
+    date: entry.date,
+    note: !wkg ? "no weight on file for W/kg" : "",
+  };
+}
+
+function MetricBlock({ metric, athletes, pbsByAthlete }) {
   return (
-    <div className="hist-row">
-      <div>
-        <strong>
-          {icon} {label}
-        </strong>
-        <div className="small muted">
-          {value ? (
-            <>
-              {prettyDate(date)}
-              {estimated ? " · estimated from training pace" : ""}
-              {note ? ` · ${note}` : ""}
-            </>
-          ) : (
-            "Not set yet — log a test or a session in this sport."
-          )}
-        </div>
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 2 }}>
+        {metric.label}{" "}
+        <span
+          className="small"
+          style={{
+            color: metric.kind === "aerobic" ? "#8ce99a" : "#ffb35c",
+            fontWeight: 600,
+          }}
+        >
+          {metric.kind === "aerobic" ? "· aerobic" : "· anaerobic"}
+        </span>
       </div>
-      <div style={{ fontWeight: 800, fontSize: 16 }}>{value || "—"}</div>
+      {athletes.map((a) => {
+        const v = metric.get(pbsByAthlete[a.id] || {}, a);
+        return (
+          <div className="hist-row" key={a.id}>
+            <div>
+              {a.name}
+              <div className="small muted">
+                {v
+                  ? `${prettyDate(v.date)}${v.estimated ? " · estimated from training pace" : ""}${v.note ? ` · ${v.note}` : ""}`
+                  : "Not set yet"}
+              </div>
+            </div>
+            <div style={{ fontWeight: 800, fontSize: 15 }}>{v ? v.text : "—"}</div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -40,14 +186,7 @@ function PbRow({ icon, label, value, date, estimated, note }) {
 export default function Benchmarks() {
   const { athletes, loading: aLoading } = useAthletes();
   const { sessions, loading: sLoading } = useSessions();
-  const { athlete: me } = useAuth();
-  const [pickedId, setPickedId] = useState(null);
-
   const loading = aLoading || sLoading;
-  const athlete =
-    athletes.find((a) => a.id === pickedId) ||
-    athletes.find((a) => a.id === me?.id) ||
-    athletes[0];
 
   if (loading) {
     return (
@@ -57,7 +196,7 @@ export default function Benchmarks() {
       </div>
     );
   }
-  if (!athlete) {
+  if (athletes.length === 0) {
     return (
       <div className="page">
         <div className="empty">
@@ -68,149 +207,75 @@ export default function Benchmarks() {
     );
   }
 
-  const pbs = computePBs(sessions, athlete);
-  const isMe = me && me.id === athlete.id;
+  const pbsByAthlete = {};
+  for (const a of athletes) pbsByAthlete[a.id] = computePBs(sessions, a);
+  const athleteById = Object.fromEntries(athletes.map((a) => [a.id, a]));
+
+  const recentTests = sessions
+    .filter((s) => s.testType)
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
+    .slice(0, 10);
 
   return (
     <div className="page">
       <h1>🏁 Tests &amp; PBs</h1>
       <p className="sub">
-        Standard test sets and the personal-best board they feed. Log tests
-        from the <Link to="/log" style={{ color: "var(--accent)" }}>Log page</Link>{" "}
+        Personal bests by sport — every athlete side by side, aerobic and
+        anaerobic. Log tests from the{" "}
+        <Link to="/log" style={{ color: "var(--accent)" }}>Log page</Link>{" "}
         (pick a test type) or via a coach block with a testType.
       </p>
 
-      {athletes.length > 1 && (
-        <div className="sport-pick" style={{ marginBottom: 14 }}>
-          {athletes.map((a) => (
-            <button
-              key={a.id}
-              type="button"
-              className={a.id === athlete.id ? "on" : ""}
-              onClick={() => setPickedId(a.id)}
-            >
-              {a.name}
-            </button>
+      {SPORTS.map((sport) => (
+        <div className="card" key={sport}>
+          <h3>
+            {SPORT_META[sport].icon} {SPORT_META[sport].label}
+          </h3>
+          {METRICS[sport].map((m) => (
+            <MetricBlock
+              key={m.key}
+              metric={m}
+              athletes={athletes}
+              pbsByAthlete={pbsByAthlete}
+            />
           ))}
         </div>
-      )}
+      ))}
 
-      <div className="card">
-        <h3>🏆 Personal bests — {athlete.name}</h3>
-        <PbRow
-          icon="🏃"
-          label="Running — best 5 km"
-          value={pbs.run5k ? formatDuration(pbs.run5k.seconds) : null}
-          date={pbs.run5k?.date}
-          estimated={pbs.run5k?.estimated}
-        />
-        <PbRow
-          icon="🏊"
-          label="Swimming — best 400 m"
-          value={pbs.swim400 ? formatDuration(pbs.swim400.seconds) : null}
-          date={pbs.swim400?.date}
-          estimated={pbs.swim400?.estimated}
-        />
-        <PbRow
-          icon="🚴"
-          label="Cycling — best 20-min power"
-          value={
-            pbs.bike20min
-              ? `${pbs.bike20min.watts} W${pbs.bike20min.wPerKg ? ` · ${pbs.bike20min.wPerKg} W/kg` : ""}`
-              : null
-          }
-          date={pbs.bike20min?.date}
-          estimated={pbs.bike20min?.estimated}
-          note={
-            pbs.bike20min && !pbs.bike20min.wPerKg
-              ? isMe
-                ? "add your weight on your profile for W/kg"
-                : "no weight on file"
-              : ""
-          }
-        />
-        <PbRow
-          icon="⛷️"
-          label="Skiing — best 10 km"
-          value={pbs.ski10k ? formatDuration(pbs.ski10k.seconds) : null}
-          date={pbs.ski10k?.date}
-          estimated={pbs.ski10k?.estimated}
-          note={pbs.ski10k ? "condition-dependent" : ""}
-        />
-        <PbRow
-          icon="🏋️"
-          label="Strength — est. 1RM total (squat + bench + deadlift)"
-          value={pbs.strengthTotal ? `${Math.round(pbs.strengthTotal.totalKg)} kg` : null}
-          date={pbs.strengthTotal?.date}
-          estimated={false}
-          note={
-            pbs.strengthTotal
-              ? `S ${Math.round(pbs.strengthTotal.squat)} · B ${Math.round(pbs.strengthTotal.bench)} · D ${Math.round(pbs.strengthTotal.deadlift)} kg`
-              : ""
-          }
-        />
-      </div>
-
-      {Object.keys(TEST_TYPES).map((testType) => {
-        const meta = TEST_TYPES[testType];
-        const tests = testsOfType(sessions, athlete.id, testType);
-        if (tests.length === 0) return null;
-        const [latest, previous] = tests;
-        const delta = previous ? testDelta(latest, previous) : null;
-        return (
-          <div className="card" key={testType}>
-            <h3>
-              {meta.label} — {athlete.name}
-            </h3>
-            <div className="kv">
-              <span className="k">Latest</span>
-              <span className="v">{testHeadline(latest)}</span>
-            </div>
-            <div className="kv">
-              <span className="k">Date</span>
-              <span className="v">{prettyDate(latest.date)}</span>
-            </div>
-            {delta && (
-              <div className="kv">
-                <span className="k">Change</span>
-                <span
-                  className="v"
-                  style={{ color: delta.improved ? "var(--accent)" : "var(--danger)" }}
-                >
-                  {delta.text}
-                </span>
-              </div>
-            )}
-            {testDetailLines(latest).map((line, i) => (
-              <p className="small muted" key={i} style={{ margin: "4px 0 0" }}>
-                {line}
-              </p>
-            ))}
-
-            {tests.length > 1 && (
-              <>
-                <hr className="divider" />
-                {tests.slice(1).map((t) => (
-                  <div className="hist-row" key={t.id}>
-                    <div>{testHeadline(t)}</div>
-                    <div className="small muted">{prettyDate(t.date)}</div>
+      {recentTests.length > 0 && (
+        <div className="card">
+          <h3>Recent tests</h3>
+          {recentTests.map((s) => {
+            const mine = testsOfType(sessions, s.athleteId, s.testType);
+            const idx = mine.findIndex((t) => t.id === s.id);
+            const previous = idx >= 0 ? mine[idx + 1] : null;
+            const delta = previous ? testDelta(s, previous) : null;
+            return (
+              <div className="hist-row" key={s.id}>
+                <div>
+                  <strong>{athleteById[s.athleteId]?.name || "?"}</strong> — {testHeadline(s)}
+                  <div className="small muted">
+                    {prettyDate(s.date)}
+                    {delta && (
+                      <span style={{ color: delta.improved ? "var(--accent)" : "var(--danger)" }}>
+                        {" "}· {delta.text}
+                      </span>
+                    )}
                   </div>
-                ))}
-              </>
-            )}
-          </div>
-        );
-      })}
-
-      {Object.keys(TEST_TYPES).every(
-        (tt) => testsOfType(sessions, athlete.id, tt).length === 0
-      ) && (
-        <div className="notice">
-          No tests logged for {athlete.name} yet. Run a 5K TT, a CSS test, a
-          20-min FTP test, a 10K ski TT or a 5RM day and log it with its test
-          type — it lands here and updates the PB board.
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
+
+      <div className="notice">
+        Extended marks (10K / 1K / 400 m runs, 1500 / 100 / 50 m swims, 60-min /
+        5-min / 1-min / 5-s power, 1K ski, best single set) come from standard
+        tests only — log the test and the board fills in. The classic five
+        (5K, 400 m swim, 20-min power, 10K ski, 1RM total) also show a
+        pace-scaled estimate, labelled as such, until a real test replaces it.
+      </div>
     </div>
   );
 }

@@ -81,6 +81,10 @@ Optional extras when you have the data (Strava exports, power meters):
 - "avgPowerW" / "npW": cycling power — feeds Load (TSS) and the PB board.
 - "relativeEffort": Strava's Relative Effort / suffer score — used as Load directly.
 - "maxPower20W": best 20-minute mean-max power — feeds the cycling PB.
+- "sourceId": the source activity ID (e.g. the Strava activity number).
+  STRONGLY recommended — the app blocks a second session with the same
+  sourceId for the same athlete, so a double-paste or re-send can't
+  double-count. (An ID in "details" like "Strava 20759801918" works too.)
 
 The app validates the block and marks the session difficultyBy='ai'.
 
@@ -107,6 +111,16 @@ vs the previous test, and the athlete's personal bests):
     Estimated 1RMs (Epley) and the combined total are computed by the app.
     Any subset of the three lifts is fine.
 
+Extended test types (same shapes; they fill the aerobic + anaerobic PB board):
+- Time tests, "test": { "time": "MM:SS" } (or "timeSec"):
+  "run10k", "run1k", "run400m" (running) · "swim1500", "swim100", "swim50"
+  (swimming) · "ski1k" (skiing — add "conditions" like ski10k).
+- Power tests, "test": { "avgPowerW": 300 } — mean-max power for the effort:
+  "bike60min" (aerobic), "bike5min", "bike1min", "bike5s" (anaerobic).
+- "strengthBestSet" (strength): best single set of ANY movement:
+    "test": { "label": "Weighted pull-up", "weightKg": 20, "reps": 5 }
+  Estimated 1RM (Epley) is the comparable number on the board.
+
 B) MANUAL ENTRY. The athlete fills the Log form themselves. Difficulty
 defaults to 1.0 and the session is flagged "awaiting coach review" in the
 feed. Review these promptly: open the session, judge the difficulty, and
@@ -120,13 +134,18 @@ your difficulty score. Consistent judgment beats precision.
 
 - Leaderboard (home): rolling 14-day totals, trend arrow vs the prior 14 days.
   This is the main competition — bad days age out on their own.
-- Versus: this week's (Mon–Sun) head-to-head for every athlete pair.
+- Versus (The Race): a weekly horse race — every athlete's avatar sits on a
+  racetrack positioned by this week's (Mon–Sun) points. Each Monday is a
+  fresh race; the week's winner earns a trophy, shown on their profile.
 - Feed: session summaries, newest first; tap for full details. Each session
-  shows its Load next to its points.
-- Tests & PBs: standard test results (latest + delta vs previous) and one
-  personal best per sport. Schedule tests into your athlete's plan — they're
-  the cleanest handicap evidence you get.
-- Profiles: per-athlete 14-day chart, per-sport breakdown, handicap history.
+  shows its Load next to its points. Athletes can edit or delete their own
+  sessions here — points and totals recalculate.
+- Tests & PBs: personal bests grouped by sport, every athlete side by side —
+  aerobic and anaerobic marks — plus recent test results with deltas.
+  Schedule tests into your athlete's plan — they're the cleanest handicap
+  evidence you get.
+- Profiles: per-athlete 14-day chart, per-sport points (14-day and all-time,
+  with session counts), weekly trophies, handicap history.
 
 ## 6. Your weekly rhythm (suggested)
 
