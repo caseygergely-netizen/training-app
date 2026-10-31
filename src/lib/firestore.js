@@ -400,6 +400,100 @@ export async function deleteCoachPost(postId) {
   await deleteDoc(doc(db, "coachPosts", postId));
 }
 
+/* ------------- Coaches' Corner: bots, links, reads -------------
+ * A coach bot is a dedicated Firebase Auth account (one per AI coach),
+ * linked to exactly one athlete by a one-time code the athlete generates
+ * in the app. Once linked, the bot reads and posts in the Corner under
+ * its coach's name on its own schedule — no human relay. Link codes live
+ * in /coachLinks, the bot registry in /coachBots, and read
+ * acknowledgements in /coachReads (doc id "<postId>__<readerUid>").
+ * The bot-side half (sign in, redeem, fetch, ack, post) runs in each
+ * coach's own bridge script against the Firestore REST API; the rules
+ * are what keep a bot scoped to its own athlete and name.
+ */
+
+export function useCoachReads(max = 500) {
+  const [reads, setReads] = useState([]);
+  useEffect(() => {
+    if (!isConfigured) return;
+    const q = query(collection(db, "coachReads"), limit(max));
+    const unsub = onSnapshot(
+      q,
+      (snap) => setReads(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+      () => {}
+    );
+    return unsub;
+  }, [max]);
+  return { reads };
+}
+
+/** Stamp that `reader` ({uid, name}) has read a Corner post. Idempotent. */
+export async function markCoachPostRead(postId, reader) {
+  if (!postId || !reader?.uid) return;
+  const ref = doc(db, "coachReads", `${postId}__${reader.uid}`);
+  await setDoc(
+    ref,
+    {
+      postId,
+      readerUid: reader.uid,
+      readerName: reader.name || "Coach",
+      at: serverTimestamp(),
+    },
+    { merge: true }
+  );
+}
+
+function randomCode(len = 8) {
+  const alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // no look-alikes
+  const buf = new Uint32Array(len);
+  crypto.getRandomValues(buf);
+  return Array.from(buf, (n) => alphabet[n % alphabet.length]).join("");
+}
+
+/** Athlete side: mint a one-time link code for their coach's bot. */
+export async function createCoachLinkCode(athlete, coachName) {
+  const code = randomCode(8);
+  await setDoc(doc(db, "coachLinks", code), {
+    athleteId: athlete.id,
+    athleteName: athlete.name || "",
+    coachName: String(coachName || athlete.coachName || "Coach").trim(),
+    createdBy: athlete.id,
+    usedBy: null,
+    date: todayStr(),
+    createdAt: serverTimestamp(),
+  });
+  return code;
+}
+
+/** The coach bot linked to an athlete (at most one active link). */
+export function useMyCoachBot(athleteId) {
+  const [bot, setBot] = useState(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    if (!isConfigured || !athleteId) {
+      setLoading(false);
+      return;
+    }
+    const q = query(collection(db, "coachBots"), where("athleteId", "==", athleteId));
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        setBot(docs[0] || null);
+        setLoading(false);
+      },
+      () => setLoading(false)
+    );
+    return unsub;
+  }, [athleteId]);
+  return { bot, loading };
+}
+
+/** Athlete side: revoke (or restore) their coach bot's Corner access. */
+export async function setCoachBotActive(botUid, active) {
+  await updateDoc(doc(db, "coachBots", botUid), { active: !!active });
+}
+
 /* ---------------- invites ---------------- */
 
 export function randomInviteCode() {

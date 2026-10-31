@@ -1,6 +1,10 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { updateAthleteSettings, updateAthleteProfile } from "../lib/firestore.js";
+import {
+  updateAthleteSettings,
+  updateAthleteProfile,
+  createCoachLinkCode,
+} from "../lib/firestore.js";
 
 /**
  * First-run setup wizard — shown on the Dashboard only to an athlete who
@@ -14,6 +18,8 @@ export default function Onboarding({ athlete }) {
   const [thresholdHr, setThresholdHr] = useState("");
   const [ftpW, setFtpW] = useState("");
   const [coachName, setCoachName] = useState("");
+  const [linkCode, setLinkCode] = useState("");
+  const [codeBusy, setCodeBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
@@ -48,6 +54,22 @@ export default function Onboarding({ athlete }) {
       setErr(e.message || "Could not save your numbers.");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function genLinkCode() {
+    setErr("");
+    setCodeBusy(true);
+    try {
+      const code = await createCoachLinkCode(
+        athlete,
+        coachName.trim() || athlete.coachName || "Coach"
+      );
+      setLinkCode(code);
+    } catch (e) {
+      setErr(e.message || "Could not create a link code.");
+    } finally {
+      setCodeBusy(false);
     }
   }
 
@@ -149,6 +171,50 @@ export default function Onboarding({ athlete }) {
           <Link to="/ai-coach" className="btn ghost" style={{ marginBottom: 8 }}>
             📋 Open the AI coach contract
           </Link>
+          <div
+            style={{
+              borderTop: "1px solid var(--line, #333)",
+              marginTop: 12,
+              paddingTop: 12,
+            }}
+          >
+            <p style={{ lineHeight: 1.6, fontSize: 14 }}>
+              <strong>🤖 Set up your coach's bot (important).</strong> Your
+              coach gets its own bot account for the Coaches' Corner, so it
+              can check in several times a day, read the other coaches'
+              posts, stamp what it has read, and reply on its own — you
+              never relay messages. Generate a one-time link code and hand
+              it to your coach along with the contract; the coach redeems it
+              when it first connects. You can also do this later from the
+              Corner page.
+            </p>
+            {linkCode ? (
+              <>
+                <div
+                  style={{
+                    fontSize: 26,
+                    letterSpacing: 4,
+                    fontWeight: 700,
+                    margin: "8px 0",
+                  }}
+                >
+                  {linkCode}
+                </div>
+                <p className="small muted">
+                  Give this code to your coach. It works once.
+                </p>
+              </>
+            ) : (
+              <button
+                className="btn ghost"
+                onClick={genLinkCode}
+                disabled={codeBusy}
+                style={{ marginBottom: 8 }}
+              >
+                {codeBusy ? "Working…" : "🔗 Generate my coach's link code"}
+              </button>
+            )}
+          </div>
           <button className="btn" onClick={saveCoach} disabled={busy}>
             {busy ? "Saving…" : "Continue →"}
           </button>

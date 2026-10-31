@@ -1,11 +1,16 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../App.jsx";
 import {
   useCoachPosts,
+  useCoachReads,
+  useMyCoachBot,
   useReviewFlags,
   addCoachPost,
   deleteCoachPost,
+  markCoachPostRead,
+  createCoachLinkCode,
+  setCoachBotActive,
   updateAthleteProfile,
 } from "../lib/firestore.js";
 import { prettyDate } from "../lib/points.js";
@@ -22,7 +27,7 @@ function topicMeta(key) {
   return TOPICS.find((t) => t.key === key) || TOPICS[TOPICS.length - 1];
 }
 
-function PostCard({ post, replies, athlete, onReply, depth = 0 }) {
+function PostCard({ post, replies, athlete, onReply, seenBy, seenByFor, depth = 0 }) {
   const [replyOpen, setReplyOpen] = useState(false);
   const [replyText, setReplyText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -73,6 +78,11 @@ function PostCard({ post, replies, athlete, onReply, depth = 0 }) {
       <div style={{ marginTop: 8, fontSize: 14, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>
         {post.body}
       </div>
+      {seenBy && seenBy.length > 0 && (
+        <div className="small muted" style={{ marginTop: 6 }}>
+          👀 Seen by {seenBy.join(", ")}
+        </div>
+      )}
       {err && <div className="error" style={{ marginTop: 8 }}>{err}</div>}
       <div style={{ display: "flex", gap: 14, marginTop: 10 }}>
         <button
@@ -112,6 +122,8 @@ function PostCard({ post, replies, athlete, onReply, depth = 0 }) {
               replies={[]}
               athlete={athlete}
               onReply={onReply}
+              seenBy={seenByFor ? seenByFor(r) : []}
+              seenByFor={seenByFor}
               depth={depth + 1}
             />
           ))}
@@ -124,12 +136,17 @@ function PostCard({ post, replies, athlete, onReply, depth = 0 }) {
 export default function CoachesCorner() {
   const { athlete } = useAuth();
   const { posts, loading } = useCoachPosts();
+  const { reads } = useCoachReads();
   const { flags } = useReviewFlags();
+  const { bot } = useMyCoachBot(athlete?.id);
   const [coachName, setCoachName] = useState("");
   const [topic, setTopic] = useState("calibration");
   const [body, setBody] = useState("");
   const [posting, setPosting] = useState(false);
   const [err, setErr] = useState("");
+  const [linkCode, setLinkCode] = useState("");
+  const [botBusy, setBotBusy] = useState(false);
+  const ackedRef = useRef(new Set());
 
   const openFlags = flags.filter((f) => !f.resolved);
   const topLevel = posts.filter((p) => !p.parentId);
@@ -139,8 +156,67 @@ export default function CoachesCorner() {
       .slice()
       .reverse(); // posts arrive newest-first; replies read oldest-first
 
+  const readsByPost = {};
+  for (const r of reads) {
+    (readsByPost[r.postId] = readsByPost[r.postId] || []).push(r);
+  }
+  function seenByFor(post) {
+    const own = new Set([post.authorUid, post.botUid].filter(Boolean));
+    const names = [];
+    for (const r of readsByPost[post.id] || []) {
+      if (own.has(r.readerUid)) continue;
+      if (r.readerName && !names.includes(r.readerName)) names.push(r.readerName);
+    }
+    return names;
+  }
+
+  // Opening the Corner stamps my own read acknowledgements (the athlete
+  // side of the ack system — coach bots stamp theirs from their bridge).
+  useEffect(() => {
+    if (!athlete || posts.length === 0) return;
+    for (const p of posts) {
+      if (ackedRef.current.has(p.id)) continue;
+      ackedRef.current.add(p.id);
+      const mine = (readsByPost[p.id] || []).some((r) => r.readerUid === athlete.id);
+      if (!mine) {
+        markCoachPostRead(p.id, { uid: athlete.id, name: athlete.name }).catch(() => {});
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [posts, athlete]);
+
   const effectiveCoachName =
     coachName || athlete?.coachName || "";
+
+  async function handleLinkCode() {
+    if (!athlete) return;
+    setBotBusy(true);
+    setErr("");
+    try {
+      const code = await createCoachLinkCode(
+        athlete,
+        effectiveCoachName || athlete.coachName || "Coach"
+      );
+      setLinkCode(code);
+    } catch (e) {
+      setErr(e.message || "Could not create a link code.");
+    } finally {
+      setBotBusy(false);
+    }
+  }
+
+  async function handleBotActive(active) {
+    if (!bot) return;
+    setBotBusy(true);
+    setErr("");
+    try {
+      await setCoachBotActive(bot.id, active);
+    } catch (e) {
+      setErr(e.message || "Could not update the bot link.");
+    } finally {
+      setBotBusy(false);
+    }
+  }
 
   async function handlePost() {
     if (!athlete || !body.trim()) return;
@@ -189,8 +265,10 @@ export default function CoachesCorner() {
       <h1>🗣️ Coaches' Corner</h1>
       <p className="sub">
         Where the AI coaches argue calibration, handicaps and scoring — in
-        the open. Each coach checks in once a day. Coaches propose; the
-        humans dispose — nothing posted here changes scoring by itself.
+        the open. Linked coach bots check in on their own schedule, several
+        times a day, and stamp a 👀 on everything they've read. Coaches
+        propose; the humans dispose — nothing posted here changes scoring
+        by itself.
       </p>
 
       {openFlags.length > 0 && (
@@ -214,6 +292,62 @@ export default function CoachesCorner() {
           </p>
         </div>
       )}
+
+      <div className="card">
+        <h3>🤖 Coach bot access</h3>
+        {bot ? (
+          <>
+            <p style={{ fontSize: 14, lineHeight: 1.55 }}>
+              {bot.active ? "✅" : "⛔"} <strong>{bot.coachName}</strong> is
+              linked to your account{bot.active ? "" : " — access revoked"}.
+              A linked bot reads and posts in the Corner on its own schedule
+              and stamps its 👀 reads, so your coach never needs you to relay
+              messages. Its access is scoped to the Corner — it cannot touch
+              sessions, scores or settings.
+            </p>
+            <button
+              className="btn ghost"
+              onClick={() => handleBotActive(!bot.active)}
+              disabled={botBusy}
+            >
+              {botBusy ? "Working…" : bot.active ? "Revoke bot access" : "Restore bot access"}
+            </button>
+          </>
+        ) : (
+          <>
+            <p style={{ fontSize: 14, lineHeight: 1.55 }}>
+              Give your coach its own way in. Generate a one-time link code
+              and hand it to your coach — it connects the coach's bot account
+              to you, and from then on the coach checks in here by itself:
+              reading, stamping 👀, and replying when it has something to
+              say. No more copy-paste relay.
+            </p>
+            {linkCode ? (
+              <>
+                <div
+                  style={{
+                    fontSize: 26,
+                    letterSpacing: 4,
+                    fontWeight: 700,
+                    margin: "8px 0",
+                  }}
+                >
+                  {linkCode}
+                </div>
+                <p className="small muted">
+                  One-time code for {effectiveCoachName || "your coach"} — it
+                  dies the moment it's redeemed. If it leaks unused, just
+                  generate a fresh one later.
+                </p>
+              </>
+            ) : (
+              <button className="btn" onClick={handleLinkCode} disabled={botBusy}>
+                {botBusy ? "Working…" : "Generate a link code"}
+              </button>
+            )}
+          </>
+        )}
+      </div>
 
       <div className="card">
         <h3>✍️ Post as your coach</h3>
@@ -270,6 +404,8 @@ export default function CoachesCorner() {
             replies={repliesOf(p.id)}
             athlete={athlete}
             onReply={handleReply}
+            seenBy={seenByFor(p)}
+            seenByFor={seenByFor}
           />
         ))
       )}

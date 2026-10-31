@@ -6,6 +6,17 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // Coach bots: a dedicated Firebase Auth account per AI coach, linked
+    // to one athlete via a one-time link code (see /coachBots below).
+    function coachBot() {
+      return get(/databases/$(database)/documents/coachBots/$(request.auth.uid)).data;
+    }
+    function isCoachBot() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/coachBots/$(request.auth.uid))
+        && coachBot().active == true;
+    }
+
     // Athletes: anyone signed in can read (leaderboard needs it).
     // Athletes write only their own profile. Demo seeding is allowed for
     // docs flagged demo == true so the "Load demo data" button works, and
@@ -55,15 +66,74 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // Coaches' Corner posts: readable by the league, written by the
-    // athlete whose account relays for their coach; the author can edit
-    // or delete their own posts.
+    // Coaches' Corner posts: readable by the league. Written either by
+    // the athlete relaying for their coach (authorUid == their uid) or
+    // directly by a linked coach bot, which may only post as the coach
+    // of the athlete it is linked to. Authors can delete their own posts.
     match /coachPosts/{postId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn()
-        && request.resource.data.authorUid == request.auth.uid;
+      allow create: if isSignedIn() && (
+        request.resource.data.authorUid == request.auth.uid
+        || (isCoachBot()
+            && request.resource.data.botUid == request.auth.uid
+            && request.resource.data.athleteId == coachBot().athleteId
+            && request.resource.data.coachName == coachBot().coachName)
+      );
       allow update, delete: if isSignedIn()
-        && resource.data.authorUid == request.auth.uid;
+        && (resource.data.authorUid == request.auth.uid
+            || resource.data.botUid == request.auth.uid);
+    }
+
+    // Corner read acknowledgements: one doc per (post, reader), id is
+    // "<postId>__<readerUid>". Any signed-in athlete or linked coach bot
+    // can stamp that they have read a post — and only for themselves.
+    match /coachReads/{readId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && request.resource.data.readerUid == request.auth.uid
+        && readId == request.resource.data.postId + '__' + request.auth.uid;
+      allow update: if isSignedIn()
+        && resource.data.readerUid == request.auth.uid;
+      allow delete: if false;
+    }
+
+    // One-time coach link codes: an athlete creates a code in the app and
+    // hands it to their AI coach; the coach's bot account redeems it once
+    // (sets usedBy to its own uid) and then registers itself in
+    // /coachBots. Codes can be fetched by id (the bot knows its code) but
+    // never listed/enumerated.
+    match /coachLinks/{code} {
+      allow get: if isSignedIn();
+      allow list: if false;
+      allow create: if isSignedIn()
+        && request.resource.data.createdBy == request.auth.uid;
+      allow update: if isSignedIn()
+        && resource.data.usedBy == null
+        && request.resource.data.usedBy == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['usedBy']);
+      allow delete: if isSignedIn()
+        && resource.data.createdBy == request.auth.uid
+        && resource.data.usedBy == null;
+    }
+
+    // Coach bot registry: doc id is the bot account's uid. A bot can only
+    // register itself, and only against a link code that IT redeemed and
+    // whose athlete/coach name match what it claims. After that, the bot
+    // or its athlete can only flip the `active` flag (revoke/restore).
+    match /coachBots/{botUid} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && botUid == request.auth.uid
+        && get(/databases/$(database)/documents/coachLinks/$(request.resource.data.linkCode)).data.usedBy == request.auth.uid
+        && get(/databases/$(database)/documents/coachLinks/$(request.resource.data.linkCode)).data.athleteId == request.resource.data.athleteId
+        && get(/databases/$(database)/documents/coachLinks/$(request.resource.data.linkCode)).data.coachName == request.resource.data.coachName;
+      allow update: if isSignedIn()
+        && (request.auth.uid == botUid
+            || request.auth.uid == resource.data.athleteId)
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['active']);
+      allow delete: if false;
     }
   }
 }
