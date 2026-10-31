@@ -10,6 +10,7 @@ import {
   formatKm,
   testHeadline,
   testDetailLines,
+  bestsHeadline,
 } from "../lib/points.js";
 import { useAuth } from "../App.jsx";
 
@@ -241,6 +242,7 @@ function SessionCard({ session, athleteName, isMine, athlete, ownerAthlete }) {
           <span className="tag ai">coach scored</span>
         )}
         {isTest && <span className="tag">🏁 {TEST_TYPES[session.testType].short}</span>}
+        {session.bests && <span className="tag">⚡ bests</span>}
       </div>
       {open && (
         <div className="session-body">
@@ -255,6 +257,15 @@ function SessionCard({ session, athleteName, isMine, athlete, ownerAthlete }) {
                   {line}
                 </span>
               ))}
+              <br />
+              <br />
+            </>
+          )}
+          {session.bests && (
+            <>
+              <strong style={{ color: "var(--text)" }}>Best efforts in this workout</strong>
+              <br />
+              {bestsHeadline(session)}
               <br />
               <br />
             </>
@@ -275,7 +286,7 @@ function SessionCard({ session, athleteName, isMine, athlete, ownerAthlete }) {
               {session.notes}
             </>
           )}
-          {!session.details && !session.notes && !isTest && "No extra details logged."}
+          {!session.details && !session.notes && !isTest && !session.bests && "No extra details logged."}
           {isMine && athlete && <RerateControl session={session} athlete={athlete} />}
           {isMine && athlete && <EditControl session={session} athlete={athlete} />}
           {isMine && <DeleteControl session={session} />}

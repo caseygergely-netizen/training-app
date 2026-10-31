@@ -5,11 +5,8 @@ import { logSession, useSessions } from "../lib/firestore.js";
 import {
   SPORTS,
   SPORT_META,
-  TEST_TYPES,
-  TIME_TEST_TYPES,
-  POWER_TEST_TYPES,
   parseCoachBlock,
-  cleanTestResult,
+  bestsHeadline,
   computeLoad,
   extractSourceId,
   findDuplicateSession,
@@ -19,8 +16,6 @@ import {
   sessionPoints,
   handicapAt,
 } from "../lib/points.js";
-
-const LIFTS = ["squat", "bench", "deadlift"];
 
 export default function LogSession() {
   const { athlete } = useAuth();
@@ -37,22 +32,9 @@ export default function LogSession() {
   const [avgHr, setAvgHr] = useState("");
   const [avgPowerW, setAvgPowerW] = useState("");
   const [relativeEffort, setRelativeEffort] = useState("");
-  // Optional standard test result.
-  const [testType, setTestType] = useState("");
-  const [testTime, setTestTime] = useState(""); // run5k / ski10k "MM:SS"
-  const [skiConditions, setSkiConditions] = useState("");
-  const [t400, setT400] = useState(""); // swimCss
-  const [t200, setT200] = useState("");
-  const [testPower, setTestPower] = useState(""); // power tests: avg / mean-max power
-  const [bestSetLabel, setBestSetLabel] = useState(""); // strengthBestSet
-  const [bestSetWeight, setBestSetWeight] = useState("");
-  const [bestSetReps, setBestSetReps] = useState("");
+  // Optional workout-derived best efforts (arrive via the coach block).
+  const [bests, setBests] = useState(null);
   const [sourceId, setSourceId] = useState(""); // duplicate protection (Strava ID etc.)
-  const [lifts, setLifts] = useState({
-    squat: { weightKg: "", reps: "" },
-    bench: { weightKg: "", reps: "" },
-    deadlift: { weightKg: "", reps: "" },
-  });
   const [coachBlock, setCoachBlock] = useState("");
   const [coachParsed, setCoachParsed] = useState(null);
   const [coachError, setCoachError] = useState("");
@@ -76,77 +58,11 @@ export default function LogSession() {
       setAvgPowerW(parsed.avgPowerW != null ? String(parsed.avgPowerW) : "");
       setRelativeEffort(parsed.relativeEffort != null ? String(parsed.relativeEffort) : "");
       setSourceId(parsed.sourceId || "");
-      // Test result from the block, if any.
-      setTestType(parsed.testType || "");
-      if (TIME_TEST_TYPES.includes(parsed.testType)) {
-        const sec = parsed.test?.timeSec || 0;
-        setTestTime(sec ? `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}` : "");
-        if (parsed.testType === "ski10k" || parsed.testType === "ski1k")
-          setSkiConditions(parsed.test?.conditions || "");
-      }
-      if (parsed.testType === "swimCss") {
-        const f = (sec) =>
-          sec ? `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}` : "";
-        setT400(f(parsed.test?.t400Sec));
-        setT200(f(parsed.test?.t200Sec));
-      }
-      if (POWER_TEST_TYPES.includes(parsed.testType)) {
-        setTestPower(parsed.test?.avgPowerW ? String(parsed.test.avgPowerW) : "");
-        if (parsed.testType === "bikeFtp" && parsed.test?.avgPowerW)
-          setAvgPowerW(String(parsed.test.avgPowerW));
-      }
-      if (parsed.testType === "strengthBestSet" && parsed.test) {
-        setBestSetLabel(parsed.test.label || "");
-        setBestSetWeight(parsed.test.weightKg ? String(parsed.test.weightKg) : "");
-        setBestSetReps(parsed.test.reps ? String(parsed.test.reps) : "");
-      }
-      if (parsed.testType === "strength5rm" && parsed.test?.lifts) {
-        setLifts((prev) => {
-          const next = { ...prev };
-          for (const lift of LIFTS) {
-            const set = parsed.test.lifts[lift];
-            next[lift] = set
-              ? { weightKg: String(set.weightKg), reps: String(set.reps) }
-              : { weightKg: "", reps: "" };
-          }
-          return next;
-        });
-      }
+      // Workout best efforts from the block, if any — they ride along on
+      // submit and feed the Personal Bests board.
+      setBests(parsed.bests || null);
     } catch (e) {
       setCoachError(e.message);
-    }
-  }
-
-  /** Build the raw test object from the form; cleanTestResult validates it. */
-  function rawTestFromForm() {
-    if (TIME_TEST_TYPES.includes(testType)) {
-      return testType === "ski10k" || testType === "ski1k"
-        ? { time: testTime, conditions: skiConditions }
-        : { time: testTime };
-    }
-    if (POWER_TEST_TYPES.includes(testType)) {
-      return { avgPowerW: Number(testPower) };
-    }
-    switch (testType) {
-      case "swimCss":
-        return { t400, t200 };
-      case "strengthBestSet":
-        return {
-          label: bestSetLabel,
-          weightKg: Number(bestSetWeight),
-          reps: Number(bestSetReps),
-        };
-      case "strength5rm": {
-        const out = {};
-        for (const lift of LIFTS) {
-          const { weightKg, reps } = lifts[lift];
-          if (weightKg !== "" || reps !== "")
-            out[lift] = { weightKg: Number(weightKg), reps: Number(reps) };
-        }
-        return { lifts: out };
-      }
-      default:
-        return null;
     }
   }
 
@@ -173,17 +89,6 @@ export default function LogSession() {
       return;
     }
 
-    // Test section is optional; when a type is picked, it must be valid.
-    let testFields = {};
-    if (testType) {
-      const cleaned = cleanTestResult(testType, rawTestFromForm());
-      if (cleaned.problem) {
-        setError(cleaned.problem);
-        return;
-      }
-      testFields = { testType, test: cleaned.test };
-    }
-
     const num = (v) => (v === "" ? undefined : Number(v));
     setSaving(true);
     try {
@@ -198,7 +103,7 @@ export default function LogSession() {
         avgPowerW: num(avgPowerW),
         relativeEffort: num(relativeEffort),
         sourceId: extractSourceId(details, sourceId) || undefined,
-        ...testFields,
+        bests: bests || undefined,
         // Difficulty comes from the coach block when present; otherwise the
         // manual default (1.0, flagged for coach review).
         difficulty: coachParsed ? coachParsed.difficulty : 1.0,
@@ -241,14 +146,8 @@ export default function LogSession() {
     ? findDuplicateSession(sessions, athlete.id, currentSourceId)
     : null;
 
-  const testOptions = Object.entries(TEST_TYPES).filter(
-    ([, t]) => t.sport === sport
-  );
-
   function pickSport(s) {
     setSport(s);
-    // A test type only makes sense for its own sport — reset on switch.
-    if (testType && TEST_TYPES[testType]?.sport !== s) setTestType("");
   }
 
   return (
@@ -409,174 +308,20 @@ export default function LogSession() {
           </p>
         </div>
 
-        <div className="card">
-          <h3>🏁 Standard test (optional)</h3>
-          <p className="small muted">
-            Was this session a standard test? Record the result — it feeds the{" "}
-            <Link to="/tests" style={{ color: "var(--accent)" }}>
-              Tests &amp; PBs board
-            </Link>
-            .
-          </p>
-          <div className="field">
-            <label>Test type</label>
-            <div className="sport-pick">
-              <button
-                type="button"
-                className={testType === "" ? "on" : ""}
-                onClick={() => setTestType("")}
-              >
-                Not a test
-              </button>
-              {testOptions.map(([key, t]) => (
-                <button
-                  key={key}
-                  type="button"
-                  className={testType === key ? "on" : ""}
-                  onClick={() => setTestType(key)}
-                >
-                  {t.label}
-                </button>
-              ))}
-            </div>
+        {bests && (
+          <div className="card">
+            <h3>⚡ Best efforts in this workout</h3>
+            <p style={{ fontWeight: 700 }}>{bestsHeadline({ bests })}</p>
+            <p className="small muted">
+              Extracted by your coach from the activity file — personal bests
+              are pulled from ordinary workouts, and these feed the{" "}
+              <Link to="/tests" style={{ color: "var(--accent)" }}>
+                Personal Bests board
+              </Link>
+              .
+            </p>
           </div>
-
-          {TIME_TEST_TYPES.includes(testType) && (
-            <div className="field">
-              <label>{TEST_TYPES[testType].label} — time (MM:SS)</label>
-              <input
-                value={testTime}
-                onChange={(e) => setTestTime(e.target.value)}
-                placeholder="19:42"
-              />
-            </div>
-          )}
-          {(testType === "ski10k" || testType === "ski1k") && (
-            <div className="field">
-              <label>Snow conditions</label>
-              <input
-                value={skiConditions}
-                onChange={(e) => setSkiConditions(e.target.value)}
-                placeholder="Cold, fast, fresh corduroy… (times are condition-dependent)"
-              />
-            </div>
-          )}
-          {testType === "swimCss" && (
-            <div className="row">
-              <div className="field grow">
-                <label>400 m time (M:SS)</label>
-                <input
-                  value={t400}
-                  onChange={(e) => setT400(e.target.value)}
-                  placeholder="5:20"
-                />
-              </div>
-              <div className="field grow">
-                <label>200 m time (M:SS)</label>
-                <input
-                  value={t200}
-                  onChange={(e) => setT200(e.target.value)}
-                  placeholder="2:35"
-                />
-              </div>
-            </div>
-          )}
-          {POWER_TEST_TYPES.includes(testType) && (
-            <div className="field">
-              <label>Average / mean-max power for the effort (W)</label>
-              <input
-                type="number"
-                min="0"
-                value={testPower}
-                onChange={(e) => setTestPower(e.target.value)}
-                placeholder="268"
-              />
-              {testType === "bikeFtp" && (
-                <p className="small muted" style={{ marginTop: 6 }}>
-                  FTP estimate = 0.95 × this number, shown on the Tests page.
-                </p>
-              )}
-            </div>
-          )}
-          {testType === "strengthBestSet" && (
-            <>
-              <div className="field">
-                <label>Movement (e.g. Weighted pull-up, Front squat)</label>
-                <input
-                  value={bestSetLabel}
-                  onChange={(e) => setBestSetLabel(e.target.value)}
-                  placeholder="Weighted pull-up"
-                />
-              </div>
-              <div className="row">
-                <div className="field grow">
-                  <label>Weight (kg)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.5"
-                    value={bestSetWeight}
-                    onChange={(e) => setBestSetWeight(e.target.value)}
-                    placeholder="20"
-                  />
-                </div>
-                <div className="field grow">
-                  <label>Reps</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={bestSetReps}
-                    onChange={(e) => setBestSetReps(e.target.value)}
-                    placeholder="5"
-                  />
-                </div>
-              </div>
-            </>
-          )}
-          {testType === "strength5rm" && (
-            <>
-              <p className="small muted">
-                Top set per lift — estimated 1RM (Epley) is computed for you.
-                Leave a lift blank if you didn't test it.
-              </p>
-              {LIFTS.map((lift) => (
-                <div className="row" key={lift}>
-                  <div className="field grow">
-                    <label>{lift} weight (kg)</label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.5"
-                      value={lifts[lift].weightKg}
-                      onChange={(e) =>
-                        setLifts((p) => ({
-                          ...p,
-                          [lift]: { ...p[lift], weightKg: e.target.value },
-                        }))
-                      }
-                      placeholder="—"
-                    />
-                  </div>
-                  <div className="field grow">
-                    <label>{lift} reps</label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={lifts[lift].reps}
-                      onChange={(e) =>
-                        setLifts((p) => ({
-                          ...p,
-                          [lift]: { ...p[lift], reps: e.target.value },
-                        }))
-                      }
-                      placeholder="5"
-                    />
-                  </div>
-                </div>
-              ))}
-            </>
-          )}
-        </div>
+        )}
 
         <div className="card">
           <div className="kv">

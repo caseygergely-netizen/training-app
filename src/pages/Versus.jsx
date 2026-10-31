@@ -20,29 +20,34 @@ function initials(name) {
     .toUpperCase();
 }
 
-function RaceLane({ row, topPoints, color, isCurrentWeek }) {
+function RaceLane({ row, topPoints, color }) {
   // Track position scales with points: the leader sits at 92% (at the flag),
   // everyone else proportionally behind. Zero points = at the gate (4%).
   const pct = topPoints > 0 ? 4 + (row.points / topPoints) * 88 : 4;
+  const isLeader = row.rank === 1 && row.points > 0;
   return (
-    <div className="race-lane">
-      <div className="race-name">
-        {row.rank === 1 && row.points > 0 ? "👑 " : ""}
-        {row.athlete.name}
+    <div className={`race-lane${isLeader ? " leader" : ""}`} style={{ "--lane": color }}>
+      <div className="race-meta">
+        <span className="race-dot" />
+        <span className="race-name">
+          {isLeader ? "👑 " : ""}
+          {row.athlete.name}
+        </span>
+        <span className="race-pts">
+          {row.points}
+          <span className="small muted"> pts</span>
+        </span>
       </div>
       <div className="race-track">
+        <div className="race-fill" style={{ width: `${pct}%` }} />
         <div
           className="race-avatar"
-          style={{ left: `${pct}%`, background: color }}
+          style={{ left: `${pct}%` }}
           title={`${row.athlete.name} — ${row.points} pts`}
         >
           {initials(row.athlete.name)}
         </div>
-        <div className="race-flag">🏁</div>
-      </div>
-      <div className="race-pts">
-        {row.points}
-        <span className="small muted"> pts</span>
+        <div className="race-finish" />
       </div>
     </div>
   );
@@ -119,7 +124,6 @@ export default function Versus() {
                 row={row}
                 topPoints={topPoints}
                 color={LANE_COLORS[i % LANE_COLORS.length]}
-                isCurrentWeek={isCurrentWeek}
               />
             ))}
             {topPoints === 0 && (

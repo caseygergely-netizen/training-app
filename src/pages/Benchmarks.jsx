@@ -1,12 +1,10 @@
-import { Link } from "react-router-dom";
 import { useAthletes, useSessions } from "../lib/firestore.js";
 import {
   SPORTS,
   SPORT_META,
   computePBs,
-  testsOfType,
+  bestsHeadline,
   testHeadline,
-  testDelta,
   formatDuration,
   prettyDate,
   round1,
@@ -16,8 +14,10 @@ import {
 /**
  * PB metrics per sport — aerobic + anaerobic. `get(pbs, athlete)` returns
  * { text, date, estimated?, note? } or null when the athlete has no mark.
- * Classic five come from computePBs (tests, with pace-scaled estimates where
- * a test hasn't been logged); the extended set is test-only.
+ * All marks come from computePBs, which derives them from ordinary
+ * workouts: best efforts attached to sessions (session.bests), legacy
+ * formal-test entries, and — for the classic five only — pace-scaled
+ * estimates until a real mark replaces them.
  */
 const METRICS = {
   running: [
@@ -211,19 +211,20 @@ export default function Benchmarks() {
   for (const a of athletes) pbsByAthlete[a.id] = computePBs(sessions, a);
   const athleteById = Object.fromEntries(athletes.map((a) => [a.id, a]));
 
-  const recentTests = sessions
-    .filter((s) => s.testType)
+  const recentBests = sessions
+    .filter((s) => s.bests || s.testType)
     .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
     .slice(0, 10);
 
   return (
     <div className="page">
-      <h1>🏁 Tests &amp; PBs</h1>
+      <h1>🏁 Personal Bests</h1>
       <p className="sub">
         Personal bests by sport — every athlete side by side, aerobic and
-        anaerobic. Log tests from the{" "}
-        <Link to="/log" style={{ color: "var(--accent)" }}>Log page</Link>{" "}
-        (pick a test type) or via a coach block with a testType.
+        anaerobic. Bests are pulled from ordinary workouts: when a session
+        contains a best effort (a 305 W best-20 inside a ride, a fast 400
+        inside a swim), the coach attaches it to the session and the board
+        updates itself. No formal tests required.
       </p>
 
       {SPORTS.map((sport) => (
@@ -242,39 +243,32 @@ export default function Benchmarks() {
         </div>
       ))}
 
-      {recentTests.length > 0 && (
+      {recentBests.length > 0 && (
         <div className="card">
-          <h3>Recent tests</h3>
-          {recentTests.map((s) => {
-            const mine = testsOfType(sessions, s.athleteId, s.testType);
-            const idx = mine.findIndex((t) => t.id === s.id);
-            const previous = idx >= 0 ? mine[idx + 1] : null;
-            const delta = previous ? testDelta(s, previous) : null;
-            return (
-              <div className="hist-row" key={s.id}>
-                <div>
-                  <strong>{athleteById[s.athleteId]?.name || "?"}</strong> — {testHeadline(s)}
-                  <div className="small muted">
-                    {prettyDate(s.date)}
-                    {delta && (
-                      <span style={{ color: delta.improved ? "var(--accent)" : "var(--danger)" }}>
-                        {" "}· {delta.text}
-                      </span>
-                    )}
-                  </div>
+          <h3>Latest bests</h3>
+          {recentBests.map((s) => (
+            <div className="hist-row" key={s.id}>
+              <div>
+                <strong>{athleteById[s.athleteId]?.name || "?"}</strong> —{" "}
+                {SPORT_META[s.sport]?.label || s.sport}
+                <div className="small muted">
+                  {s.bests ? bestsHeadline(s) : testHeadline(s)}
                 </div>
               </div>
-            );
-          })}
+              <div className="small muted">{prettyDate(s.date)}</div>
+            </div>
+          ))}
         </div>
       )}
 
       <div className="notice">
-        Extended marks (10K / 1K / 400 m runs, 1500 / 100 / 50 m swims, 60-min /
-        5-min / 1-min / 5-s power, 1K ski, best single set) come from standard
-        tests only — log the test and the board fills in. The classic five
-        (5K, 400 m swim, 20-min power, 10K ski, 1RM total) also show a
-        pace-scaled estimate, labelled as such, until a real test replaces it.
+        Every mark on this board came out of a real workout — there are no
+        formal test entries. Coaches attach best efforts to sessions (best
+        mean-max power, fastest splits, best sets) and the board takes the
+        best across all sessions. The classic five (5K, 400 m swim, 20-min
+        power, 10K ski, 1RM total) also show a pace-scaled estimate,
+        labelled as such, until a real mark replaces it. Older results
+        originally logged as formal tests still count.
       </div>
     </div>
   );

@@ -196,15 +196,9 @@ export async function logSession(athlete, fields) {
   for (const key of ["avgHr", "avgPowerW", "npW", "relativeEffort", "maxPower20W", "ftpW", "thresholdHr"]) {
     if (fields[key] != null && Number(fields[key]) > 0) docData[key] = Number(fields[key]);
   }
-  // A bike FTP test also tells us the 20-min power for the PB board.
-  if (fields.testType === "bikeFtp" && fields.test?.avgPowerW) {
-    docData.avgPowerW = docData.avgPowerW ?? Number(fields.test.avgPowerW);
-  }
-  // Optional standard test result.
-  if (fields.testType && fields.test) {
-    docData.testType = fields.testType;
-    docData.test = fields.test;
-  }
+  // Optional workout-derived best efforts (extracted by the coach from the
+  // activity file) — they feed the Personal Bests board.
+  if (fields.bests && typeof fields.bests === "object") docData.bests = fields.bests;
 
   // Training load, computed at write time (shown next to points).
   const load = computeLoad({ ...docData, difficulty }, athlete);

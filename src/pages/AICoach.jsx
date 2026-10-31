@@ -93,33 +93,37 @@ Strava Relative Effort if provided, else cycling TSS from power vs FTP, else
 hrTSS from HR vs the athlete's threshold HR (athletes set weight / threshold
 HR / FTP on their profile), else minutes × difficulty, labelled "est".
 
-C) STANDARD TESTS. When a session is a standard test, add "testType" and a
-"test" result object. Tests feed the Tests & PBs board (latest result, delta
-vs the previous test, and the athlete's personal bests):
+C) BEST EFFORTS. Personal bests are pulled from ordinary workouts — there
+are no separate test entries. When a workout CONTAINS a best effort, add a
+"bests" object to the coach block with the efforts you extracted from the
+activity file (Strava power curve, Garmin / pool splits):
 
-- "run5k" (running):      "test": { "time": "19:42" }   (or "timeSec": 1182)
-- "swimCss" (swimming):   "test": { "t400Sec": 320, "t200Sec": 155 }
-                          CSS pace is computed from the two times.
-- "bikeFtp" (cycling):    "test": { "avgPowerW": 268 }
-                          FTP estimate = 0.95 × the 20-min power.
-- "ski10k" (skiing):      "test": { "time": "38:24", "conditions": "cold, fast" }
-                          Always note snow conditions — times are condition-dependent.
-- "strength5rm" (strength):
-    "test": { "lifts": { "squat":    { "weightKg": 120, "reps": 5 },
-                         "bench":    { "weightKg": 85,  "reps": 5 },
-                         "deadlift": { "weightKg": 160, "reps": 5 } } }
-    Estimated 1RMs (Epley) and the combined total are computed by the app.
-    Any subset of the three lifts is fine.
+    "bests": {
+      "power20minW": 305,        // cycling mean-max power, watts — any of
+                                 // power60minW / power20minW / power5minW /
+                                 // power1minW / power5sW
+      "run5k": "19:42",          // times — seconds or "MM:SS". Any of:
+                                 // run10k / run5k / run1k / run400m ·
+                                 // swim1500 / swim400 / swim200 / swim100 /
+                                 // swim50 · ski10k / ski1k
+      "lifts": { "squat": { "weightKg": 120, "reps": 5 } },
+      "bestSet": { "label": "Weighted pull-up", "weightKg": 20, "reps": 5 }
+    }
 
-Extended test types (same shapes; they fill the aerobic + anaerobic PB board):
-- Time tests, "test": { "time": "MM:SS" } (or "timeSec"):
-  "run10k", "run1k", "run400m" (running) · "swim1500", "swim100", "swim50"
-  (swimming) · "ski1k" (skiing — add "conditions" like ski10k).
-- Power tests, "test": { "avgPowerW": 300 } — mean-max power for the effort:
-  "bike60min" (aerobic), "bike5min", "bike1min", "bike5s" (anaerobic).
-- "strengthBestSet" (strength): best single set of ANY movement:
-    "test": { "label": "Weighted pull-up", "weightKg": 20, "reps": 5 }
-  Estimated 1RM (Epley) is the comparable number on the board.
+- Example: a 24-minute ride whose best 20 minutes averaged 305 W is just a
+  normal session — add "power20minW": 305 and the PB board updates itself.
+- A swim CSS result rides on the session the same way: include BOTH
+  "swim400" and "swim200" in one session's bests and the board derives the
+  CSS pace from the pair.
+- Ski bests: add "skiConditions": "cold, fast" — ski times are
+  condition-dependent.
+- Strength: "lifts" = the best set per big lift performed in that session
+  (estimated 1RMs and the S+B+D total are computed by the app); "bestSet"
+  covers any other movement.
+- Only report efforts the data supports. A session logged with average
+  power only cannot yield a mean-max best — leave "bests" off rather than
+  guess. Older sessions logged as formal tests still count on the board;
+  new bests always ride on workouts.
 
 B) MANUAL ENTRY. The athlete fills the Log form themselves. Difficulty
 defaults to 1.0 and the session is flagged "awaiting coach review" in the
@@ -140,10 +144,11 @@ your difficulty score. Consistent judgment beats precision.
 - Feed: session summaries, newest first; tap for full details. Each session
   shows its Load next to its points. Athletes can edit or delete their own
   sessions here — points and totals recalculate.
-- Tests & PBs: personal bests grouped by sport, every athlete side by side —
-  aerobic and anaerobic marks — plus recent test results with deltas.
-  Schedule tests into your athlete's plan — they're the cleanest handicap
-  evidence you get.
+- Personal Bests: bests grouped by sport, every athlete side by side —
+  aerobic and anaerobic marks — all pulled from ordinary workouts via the
+  "bests" data on sessions (see §4C), plus the latest best efforts.
+  Benchmarks are the cleanest handicap evidence you get — extract them
+  whenever a workout contains one.
 - Profiles: per-athlete 14-day chart, per-sport points (14-day and all-time,
   with session counts), weekly trophies, handicap history.
 

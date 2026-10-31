@@ -402,12 +402,14 @@ export function displayLoad(session, athlete) {
   return computeLoad(session || {}, athlete);
 }
 
-/* ---------------- standard test sets ---------------- */
+/* ---------------- standard test sets (LEGACY — display/parsing only) ---------------- */
 
 /**
- * Standard tests. Test sessions are normal sessions with a testType and a
- * structured `test` result object. Each type is tagged aerobic or anaerobic
- * so the PB board can show both engines per sport.
+ * Legacy formal tests. Older sessions may carry a testType and a structured
+ * `test` result object; these helpers render them in the Feed and feed them
+ * into the PB board via sessionMarks. NEW sessions no longer use testType —
+ * personal bests now ride on ordinary workouts via the `bests` object
+ * (see cleanBests / sessionMarks below).
  *  - run5k / run10k / run1k / run400m:  test = { timeSec }
  *  - swimCss:   test = { t400Sec, t200Sec }       (CSS pace derived)
  *  - swim1500 / swim100 / swim50:       test = { timeSec }
@@ -579,146 +581,315 @@ export function testsOfType(sessions, athleteId, testType) {
 /* ---------------- personal-best benchmark board ---------------- */
 
 /**
- * One PB per sport for an athlete, derived from their sessions:
- *  - Running: best 5 km time — from run5k tests; else estimated by scaling
- *    the fastest-pace run of ≥5 km (minutes × 60 × 5 / distanceKm).
- *  - Swimming: best 400 m time — from swimCss tests (t400Sec); else estimated
- *    from the fastest-pace swim of ≥0.4 km.
- *  - Cycling: best 20-min mean-max power — from bikeFtp tests (avgPowerW) or
- *    any session carrying maxPower20W / avgPowerW; W/kg when weightKg known.
- *  - Skiing: best 10 km time — from ski10k tests; else estimated like running.
- *  - Strength: best combined estimated 1RM total from strength5rm tests.
- * Each entry: { value..., date, estimated } or null.
+ * Personal bests are derived from WORKOUTS, not formal test entries.
+ * A session can carry a `bests` object — the best efforts CONTAINED IN
+ * that workout, extracted by the coach from the activity file (Strava
+ * power curve, Garmin splits, pool splits):
+ *   bests = {
+ *     power60minW, power20minW, power5minW, power1minW, power5sW,  // watts
+ *     run10kSec, run5kSec, run1kSec, run400mSec,                    // seconds
+ *     swim1500Sec, swim400Sec, swim200Sec, swim100Sec, swim50Sec,  // seconds
+ *     ski10kSec, ski1kSec,                                         // seconds
+ *     skiConditions: "free text",           // for ski bests in this session
+ *     lifts: { squat|bench|deadlift: { weightKg, reps } },  // best set per lift
+ *     bestSet: { label, weightKg, reps },   // best set of any other movement
+ *   }
+ * A swim CSS pace derives from any session whose bests hold BOTH a 400 m
+ * and a 200 m time. Legacy sessions logged as formal tests (testType +
+ * test) feed the same board via sessionMarks — no historical mark is lost.
+ */
+
+const BEST_TIME_KEYS = [
+  ["run10k", "run10kSec"],
+  ["run5k", "run5kSec"],
+  ["run1k", "run1kSec"],
+  ["run400m", "run400mSec"],
+  ["swim1500", "swim1500Sec"],
+  ["swim400", "swim400Sec"],
+  ["swim200", "swim200Sec"],
+  ["swim100", "swim100Sec"],
+  ["swim50", "swim50Sec"],
+  ["ski10k", "ski10kSec"],
+  ["ski1k", "ski1kSec"],
+];
+const BEST_POWER_KEYS = ["power60minW", "power20minW", "power5minW", "power1minW", "power5sW"];
+const BEST_LIFTS = ["squat", "bench", "deadlift"];
+const TIME_MARK_KEYS = ["run10k", "run5k", "run1k", "run400m", "swim1500", "swim400", "swim100", "swim50", "ski10k", "ski1k"];
+const POWER_MARK_BY_BEST = { power60minW: "bike60min", power20minW: "bike20min", power5minW: "bike5min", power1minW: "bike1min", power5sW: "bike5s" };
+const POWER_MARK_BY_TEST = { bikeFtp: "bike20min", bike60min: "bike60min", bike5min: "bike5min", bike1min: "bike1min", bike5s: "bike5s" };
+
+/** Validate + normalize a raw coach-block `bests` object. Returns { bests } or { problem }. */
+export function cleanBests(raw) {
+  if (raw == null || typeof raw !== "object")
+    return { problem: '"bests" must be an object of best efforts' };
+  const bests = {};
+  for (const [short, secKey] of BEST_TIME_KEYS) {
+    const v = raw[secKey] ?? raw[short];
+    if (v == null) continue;
+    const sec = parseClock(v);
+    if (!sec) return { problem: `bests.${short} must be seconds or "MM:SS"` };
+    bests[secKey] = Math.round(sec);
+  }
+  for (const key of BEST_POWER_KEYS) {
+    const v = raw[key];
+    if (v == null) continue;
+    if (!(Number(v) > 0)) return { problem: `bests.${key} must be watts > 0` };
+    bests[key] = Math.round(Number(v));
+  }
+  if (raw.skiConditions != null) bests.skiConditions = String(raw.skiConditions);
+  if (raw.lifts != null) {
+    if (typeof raw.lifts !== "object") return { problem: '"bests.lifts" must be an object' };
+    const lifts = {};
+    for (const lift of BEST_LIFTS) {
+      const set = raw.lifts[lift];
+      if (set == null) continue;
+      const weightKg = Number(set.weightKg);
+      const reps = Number(set.reps);
+      if (!(weightKg > 0) || !(reps > 0))
+        return { problem: `bests.lifts.${lift} needs weightKg and reps > 0` };
+      lifts[lift] = { weightKg, reps };
+    }
+    if (Object.keys(lifts).length > 0) bests.lifts = lifts;
+  }
+  if (raw.bestSet != null) {
+    const label = String(raw.bestSet.label || "").trim();
+    const weightKg = Number(raw.bestSet.weightKg);
+    const reps = Number(raw.bestSet.reps);
+    if (!label) return { problem: "bests.bestSet needs a label (which movement)" };
+    if (!(weightKg > 0) || !(reps > 0))
+      return { problem: "bests.bestSet needs weightKg and reps > 0" };
+    bests.bestSet = { label, weightKg, reps };
+  }
+  if (Object.keys(bests).length === 0)
+    return { problem: '"bests" had no recognized best efforts in it' };
+  return { bests };
+}
+
+/**
+ * Every comparable mark a session contributes to the PB board, from its
+ * workout bests and (for older entries) its formal-test result.
+ * Mark: { metric, value, kind: "time"|"power"|"weight", date, estimated, label?, conditions?, parts? }.
+ */
+export function sessionMarks(session) {
+  const marks = [];
+  const date = session?.date;
+  const b = session?.bests;
+  if (b && typeof b === "object") {
+    for (const key of TIME_MARK_KEYS) {
+      const sec = Number(b[`${key}Sec`]) || 0;
+      if (sec > 0)
+        marks.push({
+          metric: key, value: sec, kind: "time", date, estimated: false,
+          conditions: key.startsWith("ski") ? b.skiConditions || "" : "",
+        });
+    }
+    for (const [key, metric] of Object.entries(POWER_MARK_BY_BEST)) {
+      const w = Number(b[key]) || 0;
+      if (w > 0) marks.push({ metric, value: w, kind: "power", date, estimated: false });
+    }
+    // CSS pace derives from a session containing both a 400 and a 200 best.
+    const t400 = Number(b.swim400Sec) || 0;
+    const t200 = Number(b.swim200Sec) || 0;
+    if (t400 > t200 && t200 > 0)
+      marks.push({ metric: "swimCssPace", value: round1((t400 - t200) / 2), kind: "time", date, estimated: false });
+    if (b.lifts) {
+      let total = 0;
+      let all = true;
+      const parts = {};
+      for (const lift of BEST_LIFTS) {
+        const set = b.lifts[lift];
+        if (!set) { all = false; continue; }
+        const v = epley1RM(set.weightKg, set.reps);
+        if (v > 0) {
+          marks.push({ metric: `lift_${lift}`, value: v, kind: "weight", date, estimated: false });
+          parts[lift] = v;
+          total += v;
+        }
+      }
+      if (all && total > 0)
+        marks.push({ metric: "strengthTotal", value: round1(total), kind: "weight", date, estimated: false, parts });
+    }
+    if (b.bestSet) {
+      const v = epley1RM(b.bestSet.weightKg, b.bestSet.reps);
+      if (v > 0)
+        marks.push({ metric: "strengthBestSet", value: v, kind: "weight", date, estimated: false, label: b.bestSet.label || "" });
+    }
+  }
+  // Legacy formal-test sessions feed the same board.
+  const type = session?.testType;
+  if (type && TEST_TYPES[type]) {
+    const t = session.test || {};
+    if (TIME_TEST_TYPES.includes(type)) {
+      if (t.timeSec)
+        marks.push({ metric: type, value: Number(t.timeSec), kind: "time", date, estimated: false, conditions: t.conditions || "" });
+    } else if (POWER_MARK_BY_TEST[type]) {
+      if (t.avgPowerW)
+        marks.push({ metric: POWER_MARK_BY_TEST[type], value: Number(t.avgPowerW), kind: "power", date, estimated: false });
+    } else if (type === "swimCss") {
+      const pace = cssPacePer100(t);
+      if (pace != null)
+        marks.push({ metric: "swimCssPace", value: pace, kind: "time", date, estimated: false });
+      if (t.t400Sec)
+        marks.push({ metric: "swim400", value: Number(t.t400Sec), kind: "time", date, estimated: false });
+    } else if (type === "strength5rm") {
+      for (const lift of BEST_LIFTS) {
+        const v = Number(t.oneRm?.[lift]) || 0;
+        if (v > 0) marks.push({ metric: `lift_${lift}`, value: round1(v), kind: "weight", date, estimated: false });
+      }
+      if (t.oneRm?.totalKg)
+        marks.push({
+          metric: "strengthTotal", value: Number(t.oneRm.totalKg), kind: "weight", date, estimated: false,
+          parts: { squat: t.oneRm.squat || 0, bench: t.oneRm.bench || 0, deadlift: t.oneRm.deadlift || 0 },
+        });
+    } else if (type === "strengthBestSet") {
+      const v = epley1RM(t.weightKg, t.reps);
+      if (v > 0)
+        marks.push({ metric: "strengthBestSet", value: v, kind: "weight", date, estimated: false, label: t.label || "" });
+    }
+  }
+  return marks;
+}
+
+const MARK_LABELS = {
+  run10k: "10K", run5k: "5K", run1k: "1K", run400m: "400 m",
+  swim1500: "1500 m", swim400: "400 m", swim100: "100 m", swim50: "50 m",
+  ski10k: "10K ski", ski1k: "1K ski",
+  bike60min: "60-min power", bike20min: "20-min power", bike5min: "5-min power",
+  bike1min: "1-min power", bike5s: "5-s power",
+};
+
+/** Short human summary of a session's workout bests, e.g. "20-min power 305 W · 400 m 5:13". */
+export function bestsHeadline(session) {
+  const b = session?.bests;
+  if (!b || typeof b !== "object") return "";
+  const parts = [];
+  for (const key of TIME_MARK_KEYS) {
+    const sec = Number(b[`${key}Sec`]) || 0;
+    if (sec > 0) parts.push(`${MARK_LABELS[key]} ${formatDuration(sec)}`);
+  }
+  const t400 = Number(b.swim400Sec) || 0;
+  const t200 = Number(b.swim200Sec) || 0;
+  if (t200 > 0) parts.push(`200 m ${formatDuration(t200)}`);
+  if (t400 > t200 && t200 > 0)
+    parts.push(`CSS ${formatDuration(round1((t400 - t200) / 2))}/100 m`);
+  for (const [key, metric] of Object.entries(POWER_MARK_BY_BEST)) {
+    const w = Number(b[key]) || 0;
+    if (w > 0) parts.push(`${MARK_LABELS[metric]} ${Math.round(w)} W`);
+  }
+  if (b.lifts)
+    for (const lift of BEST_LIFTS) {
+      const set = b.lifts[lift];
+      if (set) parts.push(`${lift} ${set.weightKg} kg × ${set.reps}`);
+    }
+  if (b.bestSet) parts.push(`${b.bestSet.label} ${b.bestSet.weightKg} kg × ${b.bestSet.reps}`);
+  return parts.join(" · ");
+}
+
+/**
+ * PBs per athlete, derived from their sessions (see sessionMarks):
+ *  - Classic five keep their output shapes: run5k {seconds}, swim400
+ *    {seconds}, bike20min {watts, wPerKg}, ski10k {seconds, conditions},
+ *    strengthTotal {totalKg, squat, bench, deadlift}.
+ *  - Extended marks: { value, kind, date, label } keyed by metric.
+ * Real marks (workout bests / legacy tests) always win; the classic time
+ * PBs fall back to a pace-scaled estimate from training, labelled as such.
  */
 export function computePBs(sessions, athlete) {
   const mine = sessions.filter((s) => s.athleteId === athlete?.id);
   const out = { run5k: null, swim400: null, bike20min: null, ski10k: null, strengthTotal: null };
 
-  // --- running 5K ---
-  const runTestList = mine.filter((s) => s.testType === "run5k" && s.test?.timeSec);
-  if (runTestList.length > 0) {
-    const best = runTestList.reduce((a, b) => (a.test.timeSec <= b.test.timeSec ? a : b));
-    out.run5k = { seconds: Number(best.test.timeSec), date: best.date, estimated: false };
-  } else {
+  const marks = [];
+  for (const s of mine) marks.push(...sessionMarks(s));
+  const bestMark = (metric) => {
+    let best = null;
+    for (const m of marks) {
+      if (m.metric !== metric) continue;
+      const better = !best || (m.kind === "time" ? m.value < best.value : m.value > best.value);
+      if (better) best = m;
+    }
+    return best;
+  };
+
+  // Pace-scaled estimate for a classic distance when no real mark exists.
+  const paceEstimate = (sport, targetKm) => {
     let best = null;
     for (const s of mine) {
-      if (s.sport !== "running" || !(Number(s.distanceKm) >= 5) || !(Number(s.minutes) > 0)) continue;
-      const sec = (Number(s.minutes) * 60 * 5) / Number(s.distanceKm);
+      if (s.sport !== sport || !(Number(s.distanceKm) >= targetKm) || !(Number(s.minutes) > 0)) continue;
+      const sec = (Number(s.minutes) * 60 * targetKm) / Number(s.distanceKm);
       if (!best || sec < best.seconds) best = { seconds: round1(sec), date: s.date, estimated: true };
     }
-    out.run5k = best;
-  }
+    return best;
+  };
+
+  // --- running 5K ---
+  const run5kMark = bestMark("run5k");
+  out.run5k = run5kMark
+    ? { seconds: run5kMark.value, date: run5kMark.date, estimated: false }
+    : paceEstimate("running", 5);
 
   // --- swimming 400 m ---
-  const cssTests = mine.filter((s) => s.testType === "swimCss" && s.test?.t400Sec);
-  if (cssTests.length > 0) {
-    const best = cssTests.reduce((a, b) => (a.test.t400Sec <= b.test.t400Sec ? a : b));
-    out.swim400 = { seconds: Number(best.test.t400Sec), date: best.date, estimated: false };
+  const swim400Mark = bestMark("swim400");
+  out.swim400 = swim400Mark
+    ? { seconds: swim400Mark.value, date: swim400Mark.date, estimated: false }
+    : paceEstimate("swimming", 0.4);
+
+  // --- skiing 10K ---
+  const ski10kMark = bestMark("ski10k");
+  if (ski10kMark) {
+    out.ski10k = { seconds: ski10kMark.value, date: ski10kMark.date, estimated: false, conditions: ski10kMark.conditions || "" };
   } else {
-    let best = null;
-    for (const s of mine) {
-      if (s.sport !== "swimming" || !(Number(s.distanceKm) >= 0.4) || !(Number(s.minutes) > 0)) continue;
-      const sec = (Number(s.minutes) * 60 * 0.4) / Number(s.distanceKm);
-      if (!best || sec < best.seconds) best = { seconds: round1(sec), date: s.date, estimated: true };
-    }
-    out.swim400 = best;
+    const est = paceEstimate("skiing", 10);
+    out.ski10k = est ? { ...est, conditions: "" } : null;
   }
 
-  // --- cycling 20-min power ---
-  let bestPower = null;
-  for (const s of mine) {
-    if (s.sport !== "cycling") continue;
-    const candidates = [];
-    if (s.testType === "bikeFtp" && s.test?.avgPowerW) candidates.push(Number(s.test.avgPowerW));
-    if (s.maxPower20W) candidates.push(Number(s.maxPower20W));
-    // A ride of ≥20 min: average power is a floor for 20-min mean-max.
-    if (Number(s.minutes) >= 20 && s.avgPowerW) candidates.push(Number(s.avgPowerW));
-    for (const w of candidates) {
-      if (w > 0 && (!bestPower || w > bestPower.watts))
-        bestPower = { watts: Math.round(w), date: s.date, estimated: !(s.testType === "bikeFtp") };
+  // --- cycling 20-min power: real marks first, then plain session fields ---
+  const bike20Mark = bestMark("bike20min");
+  let bestPower = bike20Mark
+    ? { watts: Math.round(bike20Mark.value), date: bike20Mark.date, estimated: false }
+    : null;
+  if (!bestPower) {
+    for (const s of mine) {
+      if (s.sport !== "cycling") continue;
+      const candidates = [];
+      if (s.maxPower20W) candidates.push(Number(s.maxPower20W));
+      // A ride of ≥20 min: average power is a floor for 20-min mean-max.
+      if (Number(s.minutes) >= 20 && s.avgPowerW) candidates.push(Number(s.avgPowerW));
+      for (const w of candidates) {
+        if (w > 0 && (!bestPower || w > bestPower.watts))
+          bestPower = { watts: Math.round(w), date: s.date, estimated: true };
+      }
     }
   }
   if (bestPower) {
     const weightKg = Number(athlete?.weightKg) || 0;
-    out.bike20min = {
-      ...bestPower,
-      wPerKg: weightKg > 0 ? round2(bestPower.watts / weightKg) : null,
-    };
+    out.bike20min = { ...bestPower, wPerKg: weightKg > 0 ? round2(bestPower.watts / weightKg) : null };
   }
 
-  // --- skiing 10K ---
-  const skiTests = mine.filter((s) => s.testType === "ski10k" && s.test?.timeSec);
-  if (skiTests.length > 0) {
-    const best = skiTests.reduce((a, b) => (a.test.timeSec <= b.test.timeSec ? a : b));
-    out.ski10k = {
-      seconds: Number(best.test.timeSec),
-      date: best.date,
+  // --- strength 1RM total (from a single session carrying all three lifts) ---
+  const totalMark = bestMark("strengthTotal");
+  if (totalMark) {
+    out.strengthTotal = {
+      totalKg: round1(totalMark.value),
+      squat: totalMark.parts?.squat || 0,
+      bench: totalMark.parts?.bench || 0,
+      deadlift: totalMark.parts?.deadlift || 0,
+      date: totalMark.date,
       estimated: false,
-      conditions: best.test.conditions || "",
     };
-  } else {
-    let best = null;
-    for (const s of mine) {
-      if (s.sport !== "skiing" || !(Number(s.distanceKm) >= 10) || !(Number(s.minutes) > 0)) continue;
-      const sec = (Number(s.minutes) * 60 * 10) / Number(s.distanceKm);
-      if (!best || sec < best.seconds) best = { seconds: round1(sec), date: s.date, estimated: true, conditions: "" };
-    }
-    out.ski10k = best;
   }
 
-  // --- extended test PBs (batch: aerobic + anaerobic per sport) ---
-  // For every remaining test type, take the athlete's best result:
-  // lowest time, highest power / weight. Entry: { value, kind, date, label? }.
-  const bestOf = (type) => {
-    let best = null;
-    for (const s of mine) {
-      if (s.testType !== type) continue;
-      const m = testMetric(s);
-      if (!m) continue;
-      const better =
-        !best || (m.kind === "time" ? m.value < best.value : m.value > best.value);
-      if (better)
-        best = { value: m.value, kind: m.kind, date: s.date, label: s.test?.label || "" };
-    }
-    return best;
-  };
-  for (const type of [
+  // --- extended marks ---
+  for (const metric of [
     "run10k", "run1k", "run400m",
-    "swim1500", "swim100", "swim50",
+    "swim1500", "swim100", "swim50", "swimCssPace",
     "bike60min", "bike5min", "bike1min", "bike5s",
     "ski1k", "strengthBestSet",
+    "lift_squat", "lift_bench", "lift_deadlift",
   ]) {
-    out[type] = bestOf(type);
-  }
-  // CSS pace from swimCss tests (pace, not the raw 400 time).
-  out.swimCssPace = bestOf("swimCss");
-  // Per-lift best estimated 1RM across all strength5rm tests.
-  for (const lift of ["squat", "bench", "deadlift"]) {
-    let best = null;
-    for (const s of mine) {
-      if (s.testType !== "strength5rm") continue;
-      const v = Number(s.test?.oneRm?.[lift]) || 0;
-      if (v > 0 && (!best || v > best.value)) best = { value: round1(v), date: s.date };
-    }
-    out[`lift_${lift}`] = best;
-  }
-
-  // --- strength 1RM total ---
-  const strengthTests = mine.filter(
-    (s) => s.testType === "strength5rm" && s.test?.oneRm?.totalKg
-  );
-  if (strengthTests.length > 0) {
-    const best = strengthTests.reduce((a, b) =>
-      a.test.oneRm.totalKg >= b.test.oneRm.totalKg ? a : b
-    );
-    out.strengthTotal = {
-      totalKg: round1(best.test.oneRm.totalKg),
-      squat: best.test.oneRm.squat || 0,
-      bench: best.test.oneRm.bench || 0,
-      deadlift: best.test.oneRm.deadlift || 0,
-      date: best.date,
-      estimated: false,
-    };
+    const m = bestMark(metric);
+    out[metric] = m
+      ? { value: m.kind === "weight" ? round1(m.value) : m.value, kind: m.kind, date: m.date, label: m.label || "" }
+      : null;
   }
 
   return out;
@@ -741,21 +912,18 @@ const COACH_SCHEMA = {
   maxPower20W: "number, optional — best 20-min mean-max power in watts (feeds the PB board)",
   sourceId:
     "string, optional — the source activity ID (e.g. Strava activity number). Strongly recommended: the app blocks a second session with the same sourceId for the same athlete (duplicate protection)",
-  testType:
-    "optional — one of: run5k | run10k | run1k | run400m | swimCss | swim1500 | swim100 | swim50 | bikeFtp | bike60min | bike5min | bike1min | bike5s | ski10k | ski1k | strength5rm | strengthBestSet (must match sport)",
-  test: "object, optional — required when testType is set; shape depends on the test (see below)",
-  "test shapes": {
-    "time tests (run5k, run10k, run1k, run400m, swim1500, swim100, swim50)":
-      '{ timeSec: seconds, or time: "MM:SS" }',
-    swimCss: '{ t400Sec, t200Sec } — the 400 m and 200 m times in seconds (or "M:SS")',
-    "power tests (bikeFtp, bike60min, bike5min, bike1min, bike5s)":
-      "{ avgPowerW } — mean-max power for the duration; FTP estimate = 0.95 × power (bikeFtp only)",
-    "ski tests (ski10k, ski1k)":
-      '{ timeSec (or time: "MM:SS"), conditions: "snow conditions, free text" }',
-    strength5rm:
-      "{ lifts: { squat: {weightKg, reps}, bench: {weightKg, reps}, deadlift: {weightKg, reps} } } — any subset",
-    strengthBestSet:
-      '{ label: "Weighted pull-up", weightKg, reps } — best single set of any movement',
+  bests:
+    "object, optional — the best efforts CONTAINED IN this workout, extracted from the activity file (Strava power curve, Garmin/pool splits). They feed the Personal Bests board; there are no separate test entries (see 'bests shapes'). Only include efforts the data supports.",
+  "bests shapes": {
+    "cycling power (watts, mean-max for the duration)":
+      "{ power60minW, power20minW, power5minW, power1minW, power5sW } — any subset",
+    "times (seconds, or \"MM:SS\" strings)":
+      "run10k / run5k / run1k / run400m · swim1500 / swim400 / swim200 / swim100 / swim50 · ski10k / ski1k — any subset, as keys of the bests object",
+    swimCss:
+      'include BOTH swim400 and swim200 in the same session\'s bests — CSS pace is derived from the pair',
+    "ski conditions": 'add skiConditions: "cold, fast" alongside ski bests — ski times are condition-dependent',
+    strength:
+      "{ lifts: { squat: {weightKg, reps}, bench: {...}, deadlift: {...} }, bestSet: { label, weightKg, reps } } — best set per lift actually performed; bestSet covers any other movement",
   },
 };
 
@@ -890,24 +1058,12 @@ export function parseCoachBlock(text) {
     }
   }
 
-  // Optional standard test result.
-  let testType = null;
-  let test = null;
-  if (obj.testType != null && obj.testType !== "") {
-    if (!TEST_TYPES[obj.testType]) {
-      problems.push(`testType must be one of: ${Object.keys(TEST_TYPES).join(", ")}`);
-    } else if (TEST_TYPES[obj.testType].sport !== obj.sport) {
-      problems.push(
-        `testType "${obj.testType}" is a ${TEST_TYPES[obj.testType].sport} test, not ${obj.sport}`
-      );
-    } else {
-      const cleaned = cleanTestResult(obj.testType, obj.test);
-      if (cleaned.problem) problems.push(cleaned.problem);
-      else {
-        testType = obj.testType;
-        test = cleaned.test;
-      }
-    }
+  // Optional workout-derived best efforts (feed the PB board).
+  let bests = null;
+  if (obj.bests != null) {
+    const cleaned = cleanBests(obj.bests);
+    if (cleaned.problem) problems.push(cleaned.problem);
+    else bests = cleaned.bests;
   }
 
   if (problems.length > 0) {
@@ -924,8 +1080,7 @@ export function parseCoachBlock(text) {
     notes: String(obj.notes || ""),
     sourceId: extractSourceId(String(obj.details || ""), obj.sourceId),
     ...perf,
-    testType,
-    test,
+    bests,
   };
 }
 
