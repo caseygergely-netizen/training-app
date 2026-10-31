@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { useAthletes, useSessions, setSessionDifficulty, deleteSession, updateSession } from "../lib/firestore.js";
+import { useAthletes, useSessions, setSessionDifficulty, deleteSession, updateSession, useReviewFlags, createReviewFlag, resolveReviewFlag } from "../lib/firestore.js";
 import {
   SPORT_META,
   TEST_TYPES,
@@ -200,7 +200,96 @@ function DeleteControl({ session }) {
   );
 }
 
-function SessionCard({ session, athleteName, isMine, athlete, ownerAthlete }) {
+function FlagControl({ session, athlete, ownerName, openFlags }) {
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [done, setDone] = useState(false);
+
+  async function doFlag() {
+    if (!athlete) return;
+    setBusy(true);
+    setErr("");
+    try {
+      await createReviewFlag({
+        session,
+        sessionOwnerName: ownerName,
+        flaggedBy: athlete,
+        reason,
+      });
+      setReason("");
+      setDone(true);
+    } catch (e) {
+      setErr(e.message || "Could not flag this session.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function doResolve(flag) {
+    setBusy(true);
+    setErr("");
+    try {
+      await resolveReviewFlag(flag.id, athlete?.name || "");
+    } catch (e) {
+      setErr(e.message || "Could not resolve the flag.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div style={{ marginTop: 10 }} onClick={(e) => e.stopPropagation()}>
+      {openFlags.map((f) => (
+        <div key={f.id} style={{ marginBottom: 8 }}>
+          <div className="small" style={{ color: "var(--warn)" }}>
+            🚩 Flagged by {f.coachName || f.flaggedByName}
+            {f.reason ? ` — “${f.reason}”` : ""} · argued in the Coaches'
+            Corner; the owning coach re-rates, then resolve here.
+          </div>
+          <button className="chip" style={{ marginTop: 4 }} disabled={busy} onClick={() => doResolve(f)}>
+            ✓ Resolve flag
+          </button>
+        </div>
+      ))}
+      {openFlags.length === 0 &&
+        (done ? (
+          <div className="small" style={{ color: "var(--warn)" }}>
+            🚩 Flagged — it now shows in the Coaches' Corner as an open review.
+          </div>
+        ) : (
+          <div>
+            <div className="small muted" style={{ marginBottom: 6 }}>
+              Scoring look off? Flag it for the coaches to argue in the Corner.
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder="Why does this look off? (optional)"
+                style={{
+                  flex: 1,
+                  background: "var(--bg-soft)",
+                  border: "1px solid var(--card-edge)",
+                  borderRadius: 10,
+                  color: "var(--text)",
+                  padding: "9px 10px",
+                  fontSize: 13,
+                  fontFamily: "inherit",
+                }}
+              />
+              <button className="chip" disabled={busy} onClick={doFlag}>
+                🚩 Flag scoring
+              </button>
+            </div>
+          </div>
+        ))}
+      {err && <div className="error" style={{ marginTop: 6 }}>{err}</div>}
+    </div>
+  );
+}
+
+function SessionCard({ session, athleteName, isMine, athlete, ownerAthlete, openFlags = [] }) {
   const [open, setOpen] = useState(false);
   const meta = SPORT_META[session.sport] || { label: session.sport, icon: "🏅" };
   const needsReview = session.difficultyBy === "manual-default";
@@ -243,6 +332,11 @@ function SessionCard({ session, athleteName, isMine, athlete, ownerAthlete }) {
         )}
         {isTest && <span className="tag">🏁 {TEST_TYPES[session.testType].short}</span>}
         {session.bests && <span className="tag">⚡ bests</span>}
+        {openFlags.length > 0 && (
+          <span className="tag" style={{ color: "var(--warn)", borderColor: "#4a3d1c" }}>
+            🚩 in review
+          </span>
+        )}
       </div>
       {open && (
         <div className="session-body">
@@ -287,6 +381,14 @@ function SessionCard({ session, athleteName, isMine, athlete, ownerAthlete }) {
             </>
           )}
           {!session.details && !session.notes && !isTest && !session.bests && "No extra details logged."}
+          {athlete && (
+            <FlagControl
+              session={session}
+              athlete={athlete}
+              ownerName={athleteName}
+              openFlags={openFlags}
+            />
+          )}
           {isMine && athlete && <RerateControl session={session} athlete={athlete} />}
           {isMine && athlete && <EditControl session={session} athlete={athlete} />}
           {isMine && <DeleteControl session={session} />}
@@ -299,6 +401,7 @@ function SessionCard({ session, athleteName, isMine, athlete, ownerAthlete }) {
 export default function Feed() {
   const { athletes, loading: aLoading } = useAthletes();
   const { sessions, loading: sLoading } = useSessions();
+  const { flags } = useReviewFlags();
   const { athlete } = useAuth();
   const loading = aLoading || sLoading;
   const names = Object.fromEntries(athletes.map((a) => [a.id, a.name]));
@@ -337,6 +440,7 @@ export default function Feed() {
             isMine={athlete != null && s.athleteId === athlete.id}
             athlete={athlete}
             ownerAthlete={byId[s.athleteId]}
+            openFlags={flags.filter((f) => f.sessionId === s.id && !f.resolved)}
           />
         ))
       )}

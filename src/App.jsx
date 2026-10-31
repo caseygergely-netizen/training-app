@@ -6,6 +6,7 @@ import Versus from "./pages/Versus.jsx";
 import Feed from "./pages/Feed.jsx";
 import LogSession from "./pages/LogSession.jsx";
 import Benchmarks from "./pages/Benchmarks.jsx";
+import CoachesCorner from "./pages/CoachesCorner.jsx";
 import AthleteProfile from "./pages/AthleteProfile.jsx";
 import AICoach from "./pages/AICoach.jsx";
 import Invite from "./pages/Invite.jsx";
@@ -151,6 +152,7 @@ function Shell() {
         <Route path="/feed" element={<RequireAuth><Feed /></RequireAuth>} />
         <Route path="/log" element={<RequireAuth><LogSession /></RequireAuth>} />
         <Route path="/tests" element={<RequireAuth><Benchmarks /></RequireAuth>} />
+        <Route path="/coaches" element={<RequireAuth><CoachesCorner /></RequireAuth>} />
         <Route path="/athletes/:id" element={<RequireAuth><AthleteProfile /></RequireAuth>} />
         <Route path="/ai-coach" element={<RequireAuth><AICoach /></RequireAuth>} />
         <Route path="/invite" element={<RequireAuth><Invite /></RequireAuth>} />

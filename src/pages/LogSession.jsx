@@ -13,7 +13,6 @@ import {
   formatKm,
   prettyDate,
   todayStr,
-  sessionPoints,
   handicapAt,
 } from "../lib/points.js";
 
@@ -118,14 +117,6 @@ export default function LogSession() {
 
   const previewHandicap = athlete ? handicapAt(athlete, date || todayStr()) : 1.0;
   const previewDifficulty = coachParsed ? coachParsed.difficulty : 1.0;
-  const previewPoints =
-    minutes && Number(minutes) > 0
-      ? sessionPoints({
-          minutes: Number(minutes),
-          difficulty: previewDifficulty,
-          handicap: previewHandicap,
-        })
-      : null;
   const previewLoad =
     minutes && Number(minutes) > 0
       ? computeLoad(
@@ -140,6 +131,10 @@ export default function LogSession() {
           athlete
         )
       : null;
+  // Points are scored from Load (Load × handicap); the estimated load is
+  // minutes × difficulty, which is what the preview load already reflects.
+  const previewPoints =
+    previewLoad != null ? Math.round(previewLoad.value * previewHandicap * 10) / 10 : null;
 
   const currentSourceId = extractSourceId(details, sourceId);
   const duplicate = athlete

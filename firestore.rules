@@ -44,5 +44,26 @@ service cloud.firestore {
              .hasOnly(['usedBy']);
       allow delete: if false;
     }
+
+    // Session review flags: any signed-in athlete can flag any session
+    // (session docs themselves stay owner-write) and anyone can resolve.
+    match /flags/{flagId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && request.resource.data.flaggedByUid == request.auth.uid;
+      allow update: if isSignedIn();
+      allow delete: if false;
+    }
+
+    // Coaches' Corner posts: readable by the league, written by the
+    // athlete whose account relays for their coach; the author can edit
+    // or delete their own posts.
+    match /coachPosts/{postId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && request.resource.data.authorUid == request.auth.uid;
+      allow update, delete: if isSignedIn()
+        && resource.data.authorUid == request.auth.uid;
+    }
   }
 }

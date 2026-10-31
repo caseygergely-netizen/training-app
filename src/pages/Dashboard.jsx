@@ -1,5 +1,7 @@
 import { Link } from "react-router-dom";
 import { useAthletes, useSessions, seedDemoData, clearDemoData } from "../lib/firestore.js";
+import { useAuth } from "../App.jsx";
+import Onboarding from "./Onboarding.jsx";
 import {
   rolling14Day,
   dailyPoints,
@@ -27,6 +29,7 @@ function athleteName(athletes, id) {
 export default function Dashboard() {
   const { athletes, loading: aLoading } = useAthletes();
   const { sessions, loading: sLoading } = useSessions();
+  const { athlete } = useAuth();
   const [seeding, setSeeding] = useState(false);
   const [seedError, setSeedError] = useState("");
   const [clearing, setClearing] = useState(false);
@@ -77,10 +80,32 @@ export default function Dashboard() {
     );
   }
 
+  // First-run setup: a brand-new athlete (no sessions of their own, setup
+  // not finished or skipped) gets the wizard instead of the board.
+  const mySessions = athlete
+    ? sessions.filter((s) => s.athleteId === athlete.id)
+    : [];
+  if (athlete && !athlete.onboarded && mySessions.length === 0) {
+    return <Onboarding athlete={athlete} />;
+  }
+
   return (
     <div className="page">
       <h1>🏆 Leaderboard</h1>
-      <p className="sub">Rolling 14 days · points = minutes × difficulty × handicap</p>
+      <p className="sub">Rolling 14 days · points = load × handicap</p>
+      {athlete && mySessions.length === 0 && sessions.length > 0 && (
+        <div className="card" style={{ borderColor: "#3a4a1f" }}>
+          <h3>🏁 Start here</h3>
+          <p className="small" style={{ lineHeight: 1.55 }}>
+            You're on the board with zero sessions — the goose egg is
+            temporary. Log a workout, or paste a coach block from your AI
+            coach, and you're racing.
+          </p>
+          <Link to="/log" className="btn" style={{ marginTop: 8 }}>
+            ➕ Log your first session
+          </Link>
+        </div>
+      )}
       {seedError && <div className="error">{seedError}</div>}
       {hasDemo && (
         <div style={{ marginBottom: 12 }}>

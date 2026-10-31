@@ -30,7 +30,7 @@ import {
   browserLocalPersistence,
 } from "firebase/auth";
 import { buildSeedData } from "./seed";
-import { clampDifficulty, computeLoad, handicapAt, sessionPoints, todayStr } from "./points";
+import { clampDifficulty, handicapAt, pointsForSession, todayStr } from "./points";
 
 /* ---------------- hooks ---------------- */
 
@@ -172,7 +172,6 @@ export async function logSession(athlete, fields) {
   const difficulty =
     fields.difficultyBy === "ai" ? fields.difficulty : 1.0;
   const handicap = handicapAt(athlete, fields.date);
-  const points = sessionPoints({ minutes: fields.minutes, difficulty, handicap });
 
   const docData = {
     athleteId: athlete.id,
@@ -184,7 +183,6 @@ export async function logSession(athlete, fields) {
     difficulty,
     difficultyBy: fields.difficultyBy === "ai" ? "ai" : "manual-default",
     handicapUsed: handicap,
-    points,
     notes: fields.notes || "",
     createdAt: serverTimestamp(),
   };
@@ -200,8 +198,10 @@ export async function logSession(athlete, fields) {
   // activity file) — they feed the Personal Bests board.
   if (fields.bests && typeof fields.bests === "object") docData.bests = fields.bests;
 
-  // Training load, computed at write time (shown next to points).
-  const load = computeLoad({ ...docData, difficulty }, athlete);
+  // Points are scored from Load (Load × handicap); Load is also stored for
+  // display next to the points.
+  const { points, load } = pointsForSession({ ...docData, difficulty }, athlete, handicap);
+  docData.points = points;
   if (load) {
     docData.load = load.value;
     docData.loadSource = load.source;
@@ -215,14 +215,15 @@ export async function logSession(athlete, fields) {
 /** AI coach (via the athlete) updates a session's difficulty after review. */
 export async function setSessionDifficulty(session, difficulty, athlete, by = "ai") {
   const handicap = handicapAt(athlete, session.date);
+  // Points come from Load; a difficulty change only moves sessions whose
+  // load is the difficulty-based estimate.
+  const { points, load } = pointsForSession({ ...session, difficulty }, athlete, handicap);
   const patch = {
     difficulty,
     difficultyBy: by,
     handicapUsed: handicap,
-    points: sessionPoints({ minutes: session.minutes, difficulty, handicap }),
+    points,
   };
-  // Difficulty feeds the fallback load estimate — keep it in sync.
-  const load = computeLoad({ ...session, difficulty }, athlete);
   if (load) {
     patch.load = load.value;
     patch.loadSource = load.source;
@@ -246,6 +247,7 @@ export async function updateSession(session, fields, athlete) {
   const difficulty = clampDifficulty(fields.difficulty);
   const handicap = handicapAt(athlete, session.date);
   const merged = { ...session, ...fields, minutes, difficulty };
+  const { points, load } = pointsForSession(merged, athlete, handicap);
   const patch = {
     minutes,
     difficulty,
@@ -255,11 +257,10 @@ export async function updateSession(session, fields, athlete) {
     details: String(fields.details || ""),
     notes: String(fields.notes || ""),
     handicapUsed: handicap,
-    points: sessionPoints({ minutes, difficulty, handicap }),
+    points,
   };
   if (fields.sourceId !== undefined)
     patch.sourceId = fields.sourceId ? String(fields.sourceId) : null;
-  const load = computeLoad(merged, athlete);
   if (load) {
     patch.load = load.value;
     patch.loadSource = load.source;
@@ -280,6 +281,123 @@ export async function updateAthleteSettings(uid, fields) {
     patch[key] = v == null || v === "" ? null : Number(v);
   }
   if (Object.keys(patch).length > 0) await updateDoc(doc(db, "athletes", uid), patch);
+}
+
+/** Coach identity + onboarding state on the athlete's own profile. */
+export async function updateAthleteProfile(uid, fields) {
+  const patch = {};
+  if ("coachName" in fields) patch.coachName = String(fields.coachName || "").trim();
+  if ("onboarded" in fields) patch.onboarded = Boolean(fields.onboarded);
+  if (Object.keys(patch).length > 0) await updateDoc(doc(db, "athletes", uid), patch);
+}
+
+/* ---------------- session review flags ---------------- */
+
+/**
+ * A flag says "this session's scoring looks off — coaches, review it in the
+ * Corner." Flags live in their own collection because session docs are
+ * owner-write only; any signed-in athlete can flag any session, and anyone
+ * can resolve (the resolution is a difficulty re-rate on the session itself,
+ * which stays owner/coach business).
+ */
+export function useReviewFlags(max = 100) {
+  const [flags, setFlags] = useState([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    if (!isConfigured) {
+      setLoading(false);
+      return;
+    }
+    const q = query(collection(db, "flags"), orderBy("createdAt", "desc"), limit(max));
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        setFlags(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        setLoading(false);
+      },
+      () => setLoading(false)
+    );
+    return unsub;
+  }, [max]);
+  return { flags, loading };
+}
+
+export async function createReviewFlag({ session, sessionOwnerName, flaggedBy, reason }) {
+  const ref = doc(collection(db, "flags"));
+  await setDoc(ref, {
+    sessionId: session.id,
+    sessionAthleteId: session.athleteId,
+    sessionOwnerName: sessionOwnerName || "",
+    sessionLabel: `${session.sport} · ${session.date} · ${session.minutes} min · ${session.points} pts`,
+    flaggedByUid: flaggedBy.id,
+    flaggedByName: flaggedBy.name || "",
+    coachName: flaggedBy.coachName || "",
+    reason: String(reason || "").trim(),
+    date: todayStr(),
+    resolved: false,
+    createdAt: serverTimestamp(),
+  });
+  return ref.id;
+}
+
+export async function resolveReviewFlag(flagId, resolvedByName) {
+  await updateDoc(doc(db, "flags", flagId), {
+    resolved: true,
+    resolvedBy: resolvedByName || "",
+    resolvedDate: todayStr(),
+  });
+}
+
+/* ---------------- Coaches' Corner ---------------- */
+
+/**
+ * The coaches' shared board. Coaches (the athletes' AIs) post through their
+ * athlete's account for now — the post carries the coach's name and their
+ * athlete's id. Topics: calibration | handicap | flagged | proposal |
+ * general. Replies are posts with parentId set. Humans read everything;
+ * coaches propose, humans dispose — nothing posted here changes scoring
+ * by itself.
+ */
+export function useCoachPosts(max = 200) {
+  const [posts, setPosts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    if (!isConfigured) {
+      setLoading(false);
+      return;
+    }
+    const q = query(collection(db, "coachPosts"), orderBy("createdAt", "desc"), limit(max));
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        setPosts(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        setLoading(false);
+      },
+      () => setLoading(false)
+    );
+    return unsub;
+  }, [max]);
+  return { posts, loading };
+}
+
+export async function addCoachPost({ athlete, coachName, topic, body, parentId = null }) {
+  const ref = doc(collection(db, "coachPosts"));
+  await setDoc(ref, {
+    authorUid: athlete.id,
+    athleteId: athlete.id,
+    athleteName: athlete.name || "",
+    coachName: String(coachName || athlete.coachName || "Coach").trim(),
+    topic: topic || "general",
+    body: String(body || "").trim(),
+    parentId: parentId || null,
+    date: todayStr(),
+    createdAt: serverTimestamp(),
+  });
+  return ref.id;
+}
+
+export async function deleteCoachPost(postId) {
+  await deleteDoc(doc(db, "coachPosts", postId));
 }
 
 /* ---------------- invites ---------------- */

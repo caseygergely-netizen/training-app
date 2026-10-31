@@ -1,9 +1,12 @@
 /**
  * Competition engine — pure functions, no Firebase, no React.
  *
- * Points formula:  session points = minutes × difficulty × handicap
+ * Points formula:  session points = Load × handicap  (see pointsForSession;
+ * before Oct 31, 2026 it was minutes × difficulty × handicap — old stored
+ * points are never rewritten).
  *   - difficulty: 0.5 (easy) → 2.0 (brutal), set by the AI coach per session,
- *     relative to the athlete's capacity in that sport.
+ *     relative to the athlete's capacity in that sport. Drives the estimated
+ *     Load wherever no measured load (power / HR / Strava RE) exists.
  *   - handicap: per athlete, re-evaluated every 14 days by their AI coach.
  *     Fitter athlete < 1.0, less-fit athlete > 1.0 (capped ~0.7–1.5).
  * Points are computed at write time using the handicap in effect on the
@@ -400,6 +403,30 @@ export function displayLoad(session, athlete) {
   if (session?.load != null && Number(session.load) > 0)
     return { value: Math.round(Number(session.load)), source: session.loadSource || "est" };
   return computeLoad(session || {}, athlete);
+}
+
+/**
+ * THE points rule (changed Oct 31, 2026, Casey-approved): points are scored
+ * from LOAD, not raw minutes — points = Load × handicap. A bike minute and
+ * a run minute no longer pay the same; each pays what it physiologically
+ * cost. Where no measured load exists (most swim/strength), the estimated
+ * load IS minutes × difficulty, so those sports score exactly as before
+ * and the coach's difficulty still carries them. Stored points never
+ * rewrite: sessions logged before the change keep their original points.
+ * Returns { points, load } (load may be null when minutes are missing).
+ */
+export function pointsForSession(sessionFields, athlete, handicap) {
+  const load = computeLoad(sessionFields, athlete);
+  if (load)
+    return { points: round1(load.value * Number(handicap)), load };
+  return {
+    points: sessionPoints({
+      minutes: sessionFields?.minutes,
+      difficulty: sessionFields?.difficulty ?? 1.0,
+      handicap,
+    }),
+    load: null,
+  };
 }
 
 /* ---------------- standard test sets (LEGACY — display/parsing only) ---------------- */

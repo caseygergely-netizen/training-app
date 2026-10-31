@@ -5,7 +5,8 @@ const TABS = [
   { to: "/versus", label: "Versus", icon: "⚔️" },
   { to: "/feed", label: "Feed", icon: "📰" },
   { to: "/log", label: "Log", icon: "➕" },
-  { to: "/tests", label: "Tests", icon: "🏁" },
+  { to: "/tests", label: "PBs", icon: "🏁" },
+  { to: "/coaches", label: "Corner", icon: "🗣️" },
   { to: "/ai-coach", label: "AI Coach", icon: "🤖" },
 ];
 
