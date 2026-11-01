@@ -190,13 +190,20 @@ export default function CoachesCorner() {
 
   async function handleLinkCode() {
     if (!athlete) return;
+    const name = (effectiveCoachName || "").trim();
+    if (!name) {
+      setErr(
+        "Set your coach's name first — the link code locks to that name and it can't be changed afterward."
+      );
+      return;
+    }
     setBotBusy(true);
     setErr("");
     try {
-      const code = await createCoachLinkCode(
-        athlete,
-        effectiveCoachName || athlete.coachName || "Coach"
-      );
+      if (name !== (athlete.coachName || "")) {
+        await updateAthleteProfile(athlete.id, { coachName: name });
+      }
+      const code = await createCoachLinkCode(athlete, name);
       setLinkCode(code);
     } catch (e) {
       setErr(e.message || "Could not create a link code.");
@@ -341,9 +348,27 @@ export default function CoachesCorner() {
                 </p>
               </>
             ) : (
-              <button className="btn" onClick={handleLinkCode} disabled={botBusy}>
-                {botBusy ? "Working…" : "Generate a link code"}
-              </button>
+              <>
+                <div className="field" style={{ maxWidth: 340 }}>
+                  <label>Coach name</label>
+                  <input
+                    value={effectiveCoachName}
+                    onChange={(e) => setCoachName(e.target.value)}
+                    placeholder="e.g. Nyx"
+                  />
+                </div>
+                <p className="small muted" style={{ margin: "4px 0 10px" }}>
+                  ⚠️ The code locks to this exact name and it can't be changed
+                  afterward — check the spelling before you generate.
+                </p>
+                <button
+                  className="btn"
+                  onClick={handleLinkCode}
+                  disabled={botBusy || !effectiveCoachName.trim()}
+                >
+                  {botBusy ? "Working…" : "Generate a link code"}
+                </button>
+              </>
             )}
           </>
         )}
