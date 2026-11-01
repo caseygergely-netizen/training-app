@@ -13,7 +13,10 @@
  * session date; a re-evaluation only affects new sessions.
  */
 
-export const SPORTS = ["skiing", "running", "strength", "cycling", "swimming"];
+export const SPORTS = [
+  "skiing", "running", "strength", "cycling", "swimming",
+  "hiking", "pilates", "yoga",
+];
 
 export const SPORT_META = {
   skiing: { label: "Skiing", icon: "⛷️", color: "#7cc4ff" },
@@ -21,7 +24,23 @@ export const SPORT_META = {
   strength: { label: "Strength", icon: "🏋️", color: "#b197fc" },
   cycling: { label: "Cycling", icon: "🚴", color: "#ffb35c" },
   swimming: { label: "Swimming", icon: "🏊", color: "#66d9e8" },
+  hiking: { label: "Hiking", icon: "🥾", color: "#a9d18e" },
+  pilates: { label: "Pilates", icon: "🧘", color: "#f4a7c3" },
+  yoga: { label: "Yoga", icon: "🕉️", color: "#c3a6e8" },
 };
+
+/**
+ * Sports whose Load is ALWAYS the coach's estimate (minutes × difficulty):
+ * heart rate cannot see muscular / isometric load, so an HR-derived number
+ * (hrTSS, or a Strava Relative Effort, which is HR-based for these sports)
+ * must never re-price them. Ratified in the Coaches' Corner, Nov 1, 2026
+ * (strength), extended to pilates/yoga when those sports were added.
+ * These sports also carry no Personal Bests records.
+ */
+export const ESTIMATED_LOAD_SPORTS = ["strength", "pilates", "yoga"];
+
+/** Sports with no Personal Bests board (workouts count; records don't). */
+export const NO_RECORD_SPORTS = ["hiking", "pilates", "yoga"];
 
 export const MIN_DIFFICULTY = 0.5;
 export const MAX_DIFFICULTY = 2.0;
@@ -360,12 +379,18 @@ export function hypeBadges(sessions, athletes, asOf = todayStr()) {
 /**
  * Training load for a session (TSS-style, ~ comparable to Strava's
  * Relative Effort scale). Priority:
+ *  0. Estimated-load sports (strength / pilates / yoga): ALWAYS the
+ *     estimate — HR-derived numbers can't see muscular load and must
+ *     never re-price these sessions (Corner decision, Nov 1, 2026).
  *  1. Strava Relative Effort (suffer score) when present on the session.
  *  2. Cycling with power: TSS = hours × (NP or avg power / FTP)² × 100.
  *     FTP from the session (ftpW) or the athlete profile (ftpW).
- *  3. Run/swim (or any sport) with HR: hrTSS = hours × (avg HR / threshold HR)² × 100.
+ *  3. Run/swim (or any other sport) with HR: hrTSS = hours × (avg HR / threshold HR)² × 100.
  *     Threshold HR from the session (thresholdHr) or the athlete profile.
- *  4. Fallback estimate: minutes × difficulty (labelled "est").
+ *  4. Fallback estimate: minutes × difficulty (labelled "est"). For
+ *     hiking, elevation gain adds equivalent minutes first (Naismith:
+ *     ~10 min per 100 m climbed) — only on this estimated path, since a
+ *     measured load already reflects the climbing.
  * Returns { value, source } where source is
  * "strava" | "tss" | "hrtss" | "est", or null when nothing is computable.
  */
@@ -373,6 +398,11 @@ export function computeLoad(session, athlete) {
   const minutes = Number(session?.minutes) || 0;
   if (!(minutes > 0)) return null;
   const hours = minutes / 60;
+  const difficulty = clampDifficulty(session.difficulty ?? 1.0);
+
+  if (ESTIMATED_LOAD_SPORTS.includes(session?.sport)) {
+    return { value: Math.round(minutes * difficulty), source: "est" };
+  }
 
   const rel = Number(session.relativeEffort);
   if (session.relativeEffort != null && rel > 0)
@@ -392,8 +422,10 @@ export function computeLoad(session, athlete) {
     return { value: Math.round(hours * ratio * ratio * 100), source: "hrtss" };
   }
 
+  const elevationBonusMin =
+    session.sport === "hiking" ? (Number(session.elevationGainM) || 0) / 10 : 0;
   return {
-    value: Math.round(minutes * clampDifficulty(session.difficulty ?? 1.0)),
+    value: Math.round((minutes + elevationBonusMin) * difficulty),
     source: "est",
   };
 }
@@ -925,10 +957,11 @@ export function computePBs(sessions, athlete) {
 /* ---------------- AI coach block (paste-into-/log JSON) ---------------- */
 
 const COACH_SCHEMA = {
-  sport: "one of: skiing | running | strength | cycling | swimming",
+  sport: "one of: skiing | running | strength | cycling | swimming | hiking | pilates | yoga",
   date: "YYYY-MM-DD",
   minutes: "number > 0",
   distanceKm: "number, optional — decimals welcome, e.g. 33.66",
+  elevationGainM: "number, optional — total climbing in metres (hiking; feeds the estimated Load when no measured load exists)",
   details: "string, optional — sets / weights / swim set times",
   difficulty: "number 0.5–2.0, REQUIRED — set by the AI coach",
   notes: "string, optional — how it felt, what the coach noticed",
@@ -1075,6 +1108,8 @@ export function parseCoachBlock(text) {
     );
   if (obj.distanceKm != null && !(Number(obj.distanceKm) >= 0))
     problems.push("distanceKm must be a number ≥ 0");
+  if (obj.elevationGainM != null && !(Number(obj.elevationGainM) >= 0))
+    problems.push("elevationGainM must be a number ≥ 0");
 
   // Optional performance data (Strava exports, power meters, HR straps).
   const perf = {};
@@ -1093,6 +1128,27 @@ export function parseCoachBlock(text) {
     else bests = cleaned.bests;
   }
 
+  // Legacy formal-test fields (testType/test) are retired — new sessions
+  // carry efforts in "bests". Never drop them silently (a dropped swim CSS
+  // test cost Braeden his PB board entry on Nov 1, 2026): a swimCss test
+  // converts cleanly to bests; anything else is a loud error so the coach
+  // re-sends in the current shape.
+  if (obj.testType != null || obj.test != null) {
+    if (obj.testType === "swimCss") {
+      const cleanedTest = cleanTestResult("swimCss", obj.test);
+      if (cleanedTest.problem) problems.push(cleanedTest.problem);
+      else {
+        bests = bests || {};
+        if (bests.swim400Sec == null) bests.swim400Sec = cleanedTest.test.t400Sec;
+        if (bests.swim200Sec == null) bests.swim200Sec = cleanedTest.test.t200Sec;
+      }
+    } else {
+      problems.push(
+        `testType/test are retired (got testType "${obj.testType || ""}") — carry the effort in "bests" instead (AI Coach page, Best Efforts)`
+      );
+    }
+  }
+
   if (problems.length > 0) {
     throw new Error("Coach block problem: " + problems.join("; "));
   }
@@ -1101,6 +1157,7 @@ export function parseCoachBlock(text) {
     date: obj.date,
     minutes: Number(obj.minutes),
     distanceKm: obj.distanceKm != null ? round2(obj.distanceKm) : null,
+    elevationGainM: obj.elevationGainM != null ? Math.round(Number(obj.elevationGainM)) : null,
     details: String(obj.details || ""),
     difficulty: clampDifficulty(diff),
     difficultyBy: "ai",

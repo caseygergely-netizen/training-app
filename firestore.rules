@@ -32,11 +32,29 @@ service cloud.firestore {
     // Sessions: anyone signed in can read (feed + board need it).
     // Athletes write only their own sessions. Demo seeding allowed for
     // docs flagged demo == true, and anyone signed in can delete demo docs.
+    // A linked, active coach bot may also CREATE a session for its own
+    // athlete — only with the athlete-confirmation audit fields and a
+    // sourceId (duplicate protection) attached. Bots can never update or
+    // delete sessions; corrections stay with the athlete. Points accuracy
+    // is policed by the coaches' session scans + review flags, as before.
     match /sessions/{sid} {
       allow read: if isSignedIn();
       allow create: if isSignedIn()
         && (request.resource.data.athleteId == request.auth.uid
-            || request.resource.data.demo == true);
+            || request.resource.data.demo == true
+            || (isCoachBot()
+                && request.resource.data.athleteId == coachBot().athleteId
+                && request.resource.data.postedByBotUid == request.auth.uid
+                && request.resource.data.postedByCoachName == coachBot().coachName
+                && request.resource.data.confirmedByAthlete == true
+                && request.resource.data.sourceId is string
+                && request.resource.data.sourceId.size() > 0
+                && request.resource.data.minutes is number
+                && request.resource.data.minutes > 0
+                && request.resource.data.minutes <= 1440
+                && request.resource.data.difficulty is number
+                && request.resource.data.difficulty >= 0.5
+                && request.resource.data.difficulty <= 2.0));
       allow update: if isSignedIn()
         && resource.data.athleteId == request.auth.uid
         && request.resource.data.athleteId == request.auth.uid;

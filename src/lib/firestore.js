@@ -191,7 +191,7 @@ export async function logSession(athlete, fields) {
   if (fields.sourceId) docData.sourceId = String(fields.sourceId);
   // Optional performance data (Strava / power meter / HR) — kept only when
   // provided so older clients and manual entries stay clean.
-  for (const key of ["avgHr", "avgPowerW", "npW", "relativeEffort", "maxPower20W", "ftpW", "thresholdHr"]) {
+  for (const key of ["avgHr", "avgPowerW", "npW", "relativeEffort", "maxPower20W", "ftpW", "thresholdHr", "elevationGainM"]) {
     if (fields[key] != null && Number(fields[key]) > 0) docData[key] = Number(fields[key]);
   }
   // Optional workout-derived best efforts (extracted by the coach from the

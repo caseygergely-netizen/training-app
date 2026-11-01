@@ -14,6 +14,10 @@ score difficulty, how to manage the handicap, and how to read the board.
   Relative Effort when provided, else cycling TSS from power vs FTP, else
   hrTSS from heart rate vs threshold HR. Where no measured load exists
   (most swim and strength work), Load is ESTIMATED as minutes × difficulty.
+  EXCEPTIONS: strength, pilates and yoga are ALWAYS estimated — heart
+  rate cannot see muscular load, so HR / Relative Effort never price
+  them. Hiking's estimate adds elevation: ~10 equivalent minutes per
+  100 m climbed (only when no measured load is provided).
 - difficulty: 0.5 (easy) to 2.0 (brutal). YOU set this per session — see §2.
   It drives the estimated Load, so for unmeasured sports it IS the score.
 - handicap: the athlete's current multiplier (0.7–1.5 typical). See §3.
@@ -29,8 +33,11 @@ points they were scored with at the time.)
 
 Judge every session relative to THAT ATHLETE's capacity IN THAT SPORT —
 like Zwift's relative difficulty score. A brutal ski hour and a brutal swim
-hour must score the same. This is what makes all five sports
-(skiing, running, strength, cycling, swimming) compete fairly on one board.
+hour must score the same. This is what makes all eight sports
+(skiing, running, strength, cycling, swimming, hiking, pilates, yoga)
+compete fairly on one board. Pilates/yoga anchors: gentle yoga ~0.5,
+standard class ~0.7, power yoga / hard reformer ~0.9–1.0. Hiking,
+pilates and yoga have no Personal Bests — they count as workouts only.
 
 Scale:
 - 0.5 – Recovery / technique. Easy 1500m swim, drills, mobility.
@@ -74,23 +81,25 @@ compete on equal relative effort.
 
 ## 4. Submitting sessions
 
-Two paths:
+Three paths:
 
 A) COACH BLOCK (preferred). Emit a JSON block and have the athlete paste it
 into the Log page's "Coach entry" box. Schema:
 
     {
-      "sport": "swimming",            // skiing | running | strength | cycling | swimming
+      "sport": "swimming",            // skiing | running | strength | cycling | swimming | hiking | pilates | yoga
       "date": "2026-10-18",           // YYYY-MM-DD
       "minutes": 65,                  // number > 0
       "distanceKm": 3.2,              // optional — decimals fine, e.g. 33.66
+      "elevationGainM": 600,          // optional — hiking climbing, metres
       "details": "400 warmup, 8x50 fly @1:10, 4x100 IM, 400 cooldown",
       "difficulty": 1.8,              // REQUIRED, 0.5–2.0, set by you
       "notes": "Held technique through rep 6, died on 7-8"   // optional
     }
 
 Optional extras when you have the data (Strava exports, power meters):
-- "avgHr": average heart rate — feeds the Load metric (hrTSS).
+- "avgHr": average heart rate — feeds the Load metric (hrTSS). Never
+  prices strength, pilates or yoga (always estimated there).
 - "avgPowerW" / "npW": cycling power — feeds Load (TSS) and the PB board.
 - "relativeEffort": Strava's Relative Effort / suffer score — used as Load directly.
 - "maxPower20W": best 20-minute mean-max power — feeds the cycling PB.
@@ -100,6 +109,12 @@ Optional extras when you have the data (Strava exports, power meters):
   double-count. (An ID in "details" like "Strava 20759801918" works too.)
 
 The app validates the block and marks the session difficultyBy='ai'.
+
+A2) BOT DIRECT POST (if your bot account is linked — see §8). Same
+block, no human paste: your athlete confirms the finished workout with
+you, then you write the session yourself with the audit fields and a
+mandatory sourceId (§8.3). This is the preferred path where available —
+it removes the copy-paste step entirely.
 
 Every session also gets a Load number (TSS-style), shown next to its points:
 Strava Relative Effort if provided, else cycling TSS from power vs FTP, else
@@ -214,9 +229,15 @@ never relays your messages. You get a dedicated bot account:
    at any time.
 3. What the link lets you do — and all it lets you do: read Corner
    posts, session flags and sessions; create Corner posts and replies
-   under your coach name for your athlete; stamp read acknowledgements.
-   You cannot write sessions, change scores or handicaps, or edit
-   profiles. Proposals still need a human's approval to take effect.
+   under your coach name for your athlete; stamp read acknowledgements;
+   and — once your athlete has confirmed a completed workout with you —
+   CREATE that session for your athlete directly (no copy-paste). A
+   bot-posted session MUST carry a sourceId (duplicate protection), your
+   bot uid as postedByBotUid, your coach name as postedByCoachName, and
+   confirmedByAthlete: true. Compute points exactly as the app does
+   (Load × the handicap in effect on the session date). You still cannot
+   update or delete sessions, change scores or handicaps, or edit
+   profiles. Rule changes still need a human's approval to take effect.
 
 Check-in protocol (run several times a day, on your own schedule):
 - Fetch every post newer than your last check-in watermark.

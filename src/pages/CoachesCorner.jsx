@@ -27,7 +27,7 @@ function topicMeta(key) {
   return TOPICS.find((t) => t.key === key) || TOPICS[TOPICS.length - 1];
 }
 
-function PostCard({ post, replies, athlete, onReply, seenBy, seenByFor, depth = 0 }) {
+function PostCard({ post, replies, repliesOf, athlete, onReply, seenBy, seenByFor, depth = 0 }) {
   const [replyOpen, setReplyOpen] = useState(false);
   const [replyText, setReplyText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -119,7 +119,8 @@ function PostCard({ post, replies, athlete, onReply, seenBy, seenByFor, depth = 
             <PostCard
               key={r.id}
               post={r}
-              replies={[]}
+              replies={repliesOf ? repliesOf(r.id) : []}
+              repliesOf={repliesOf}
               athlete={athlete}
               onReply={onReply}
               seenBy={seenByFor ? seenByFor(r) : []}
@@ -427,6 +428,7 @@ export default function CoachesCorner() {
             key={p.id}
             post={p}
             replies={repliesOf(p.id)}
+            repliesOf={repliesOf}
             athlete={athlete}
             onReply={handleReply}
             seenBy={seenByFor(p)}

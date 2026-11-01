@@ -25,6 +25,7 @@ export default function LogSession() {
   const [date, setDate] = useState(todayStr());
   const [minutes, setMinutes] = useState("");
   const [distanceKm, setDistanceKm] = useState("");
+  const [elevationGainM, setElevationGainM] = useState("");
   const [details, setDetails] = useState("");
   const [notes, setNotes] = useState("");
   // Optional performance data (feeds the Load metric).
@@ -51,6 +52,7 @@ export default function LogSession() {
       setDate(parsed.date);
       setMinutes(String(parsed.minutes));
       setDistanceKm(parsed.distanceKm != null ? formatKm(parsed.distanceKm) : "");
+      setElevationGainM(parsed.elevationGainM != null ? String(parsed.elevationGainM) : "");
       setDetails(parsed.details || "");
       setNotes(parsed.notes || "");
       setAvgHr(parsed.avgHr != null ? String(parsed.avgHr) : "");
@@ -101,6 +103,7 @@ export default function LogSession() {
         avgHr: num(avgHr),
         avgPowerW: num(avgPowerW),
         relativeEffort: num(relativeEffort),
+        elevationGainM: num(elevationGainM),
         sourceId: extractSourceId(details, sourceId) || undefined,
         bests: bests || undefined,
         // Difficulty comes from the coach block when present; otherwise the
@@ -127,6 +130,7 @@ export default function LogSession() {
             avgHr: avgHr === "" ? undefined : Number(avgHr),
             avgPowerW: avgPowerW === "" ? undefined : Number(avgPowerW),
             relativeEffort: relativeEffort === "" ? undefined : Number(relativeEffort),
+            elevationGainM: elevationGainM === "" ? undefined : Number(elevationGainM),
           },
           athlete
         )
@@ -238,6 +242,24 @@ export default function LogSession() {
               />
             </div>
           </div>
+
+          {sport === "hiking" && (
+            <div className="field">
+              <label>Elevation gain (m, optional)</label>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={elevationGainM}
+                onChange={(e) => setElevationGainM(e.target.value)}
+                placeholder="600"
+              />
+              <p className="small muted" style={{ marginTop: 4 }}>
+                Climbing counts toward the estimated Load (~10 min per
+                100 m) when no measured load is logged.
+              </p>
+            </div>
+          )}
 
           <div className="field">
             <label>Workout details (sets / weights / swim sets)</label>

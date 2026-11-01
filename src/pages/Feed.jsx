@@ -307,6 +307,7 @@ function SessionCard({ session, athleteName, isMine, athlete, ownerAthlete, open
           <div className="small muted">
             {prettyDate(session.date)} · {session.minutes} min
             {session.distanceKm != null ? ` · ${formatKm(session.distanceKm)} km` : ""}
+            {session.elevationGainM ? ` · ⛰ ${session.elevationGainM} m gain` : ""}
           </div>
         </div>
         <div style={{ textAlign: "right" }}>
@@ -332,6 +333,9 @@ function SessionCard({ session, athleteName, isMine, athlete, ownerAthlete, open
         )}
         {isTest && <span className="tag">🏁 {TEST_TYPES[session.testType].short}</span>}
         {session.bests && <span className="tag">⚡ bests</span>}
+        {session.postedByBotUid && (
+          <span className="tag">🤖 posted by {session.postedByCoachName || "coach bot"} · athlete confirmed</span>
+        )}
         {openFlags.length > 0 && (
           <span className="tag" style={{ color: "var(--warn)", borderColor: "#4a3d1c" }}>
             🚩 in review

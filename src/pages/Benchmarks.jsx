@@ -227,7 +227,7 @@ export default function Benchmarks() {
         updates itself. No formal tests required.
       </p>
 
-      {SPORTS.map((sport) => (
+      {SPORTS.filter((sport) => METRICS[sport]).map((sport) => (
         <div className="card" key={sport}>
           <h3>
             {SPORT_META[sport].icon} {SPORT_META[sport].label}
