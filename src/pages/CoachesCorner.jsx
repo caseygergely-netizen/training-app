@@ -27,13 +27,67 @@ function topicMeta(key) {
   return TOPICS.find((t) => t.key === key) || TOPICS[TOPICS.length - 1];
 }
 
-function PostCard({ post, replies, repliesOf, athlete, onReply, seenBy, seenByFor, depth = 0 }) {
+/** Post time in ms — createdAt is a Firestore Timestamp for app posts and
+ * an ISO string for bot posts; fall back to the post's date. */
+function postTime(p) {
+  const c = p?.createdAt;
+  if (typeof c === "string") return Date.parse(c) || 0;
+  if (c && typeof c.toMillis === "function") return c.toMillis();
+  if (c && typeof c.seconds === "number") return c.seconds * 1000;
+  return Date.parse(p?.date || "") || 0;
+}
+
+/** Every post in a thread (root + all descendants), oldest-first. */
+function gatherThread(root, repliesOf) {
+  const out = [root];
+  const walk = (id) => {
+    for (const r of repliesOf(id)) {
+      out.push(r);
+      walk(r.id);
+    }
+  };
+  walk(root.id);
+  return out.sort((a, b) => postTime(a) - postTime(b));
+}
+
+/** One-line preview of a post body for a collapsed thread card. */
+function previewOf(body, max = 120) {
+  const line = String(body || "").split("\n").map((s) => s.trim()).find(Boolean) || "";
+  return line.length > max ? line.slice(0, max - 1) + "…" : line;
+}
+
+function PostCard({ post, replies, repliesOf, athlete, onReply, seenBy, seenByFor, onVisible, depth = 0 }) {
   const [replyOpen, setReplyOpen] = useState(false);
   const [replyText, setReplyText] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const mine = athlete && post.authorUid === athlete.id;
   const meta = topicMeta(post.topic);
+  const cardRef = useRef(null);
+  const stampedRef = useRef(false);
+
+  // View-based read receipt (Casey, Nov 2, 2026): my Seen-by stamp fires
+  // only when this card actually appears on screen — a solid slice of it
+  // inside the viewport. Merely opening the Corner, or a post sitting in
+  // a collapsed thread / below the fold, never stamps.
+  useEffect(() => {
+    if (!onVisible || !cardRef.current) return;
+    const el = cardRef.current;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (e.isIntersecting && e.intersectionRect.height >= 80 && !stampedRef.current) {
+            stampedRef.current = true;
+            onVisible(post.id);
+            obs.disconnect();
+          }
+        }
+      },
+      { threshold: [0, 0.1, 0.25, 0.5, 0.75, 1] }
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [onVisible, post.id]);
 
   async function sendReply() {
     if (!replyText.trim()) return;
@@ -61,6 +115,7 @@ function PostCard({ post, replies, repliesOf, athlete, onReply, seenBy, seenByFo
 
   return (
     <div
+      ref={cardRef}
       className="card"
       style={depth > 0 ? { marginLeft: 22, marginTop: -4 } : undefined}
     >
@@ -125,9 +180,83 @@ function PostCard({ post, replies, repliesOf, athlete, onReply, seenBy, seenByFo
               onReply={onReply}
               seenBy={seenByFor ? seenByFor(r) : []}
               seenByFor={seenByFor}
+              onVisible={onVisible}
               depth={depth + 1}
             />
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * A whole thread as one card. Collapsed by default (Casey, Nov 2, 2026):
+ * the board is a tidy list of threads; the collapsed card shows the root
+ * post's opening line, the newest activity, and how many posts the viewer
+ * hasn't actually seen yet. Expanding renders the full thread.
+ */
+function ThreadCard({ root, thread, repliesOf, athlete, onReply, seenByFor, onVisible, myReadIds, expanded, onToggle }) {
+  const meta = topicMeta(root.topic);
+  const latest = thread[thread.length - 1];
+  const replyCount = thread.length - 1;
+  const unread = thread.filter(
+    (p) => p.authorUid !== athlete?.id && !myReadIds.has(p.id)
+  ).length;
+
+  return (
+    <div className="card">
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+        <strong style={{ color: "var(--accent)", fontSize: 15 }}>{root.coachName}</strong>
+        <span className="small muted">
+          coach of {root.athleteName} · {prettyDate(root.date)}
+        </span>
+        <span className="tag" style={{ marginLeft: "auto" }}>
+          {meta.icon} {meta.label}
+        </span>
+      </div>
+      {!expanded && (
+        <>
+          <div
+            className="small"
+            style={{ marginTop: 6, overflowWrap: "anywhere" }}
+          >
+            {previewOf(root.body)}
+          </div>
+          <div className="small muted" style={{ marginTop: 6 }}>
+            {replyCount === 0
+              ? "No replies yet"
+              : `${replyCount} ${replyCount === 1 ? "reply" : "replies"} · last by ${latest.coachName} · ${prettyDate(latest.date)}`}
+          </div>
+          {!expanded && latest.id !== root.id && (
+            <div className="small muted" style={{ marginTop: 2, overflowWrap: "anywhere" }}>
+              ↳ {previewOf(latest.body, 100)}
+            </div>
+          )}
+        </>
+      )}
+      <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 10 }}>
+        <button className="chip" type="button" onClick={onToggle}>
+          {expanded ? "▾ Collapse" : "▸ Open thread"}
+        </button>
+        {unread > 0 && (
+          <span className="tag" style={{ background: "#5a4a1f", color: "#ffd98a" }}>
+            ● {unread} new
+          </span>
+        )}
+      </div>
+      {expanded && (
+        <div style={{ marginTop: 12 }}>
+          <PostCard
+            post={root}
+            replies={repliesOf(root.id)}
+            repliesOf={repliesOf}
+            athlete={athlete}
+            onReply={onReply}
+            seenBy={seenByFor(root)}
+            seenByFor={seenByFor}
+            onVisible={onVisible}
+          />
         </div>
       )}
     </div>
@@ -147,7 +276,8 @@ export default function CoachesCorner() {
   const [err, setErr] = useState("");
   const [linkCode, setLinkCode] = useState("");
   const [botBusy, setBotBusy] = useState(false);
-  const ackedRef = useRef(new Set());
+  const [openThreads, setOpenThreads] = useState(() => new Set());
+  const stampedRef = useRef(new Set());
 
   const openFlags = flags.filter((f) => !f.resolved);
   const topLevel = posts.filter((p) => !p.parentId);
@@ -156,6 +286,15 @@ export default function CoachesCorner() {
       .filter((p) => p.parentId === id)
       .slice()
       .reverse(); // posts arrive newest-first; replies read oldest-first
+
+  // Threads sorted by most recent activity (bump sort) — a thread with a
+  // fresh reply rises above newer-but-quiet threads.
+  const threads = topLevel
+    .map((root) => {
+      const thread = gatherThread(root, repliesOf);
+      return { root, thread, lastActivity: postTime(thread[thread.length - 1]) };
+    })
+    .sort((a, b) => b.lastActivity - a.lastActivity);
 
   const readsByPost = {};
   for (const r of reads) {
@@ -171,20 +310,31 @@ export default function CoachesCorner() {
     return names;
   }
 
-  // Opening the Corner stamps my own read acknowledgements (the athlete
-  // side of the ack system — coach bots stamp theirs from their bridge).
-  useEffect(() => {
-    if (!athlete || posts.length === 0) return;
-    for (const p of posts) {
-      if (ackedRef.current.has(p.id)) continue;
-      ackedRef.current.add(p.id);
-      const mine = (readsByPost[p.id] || []).some((r) => r.readerUid === athlete.id);
-      if (!mine) {
-        markCoachPostRead(p.id, { uid: athlete.id, name: athlete.name }).catch(() => {});
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [posts, athlete]);
+  // My own read state, for unread counts: posts I hold a read doc on.
+  const myReadIds = new Set(
+    athlete ? reads.filter((r) => r.readerUid === athlete.id).map((r) => r.postId) : []
+  );
+
+  // View-based read receipts (Casey, Nov 2, 2026): a post earns my
+  // Seen-by stamp only when its card actually appears on screen (the
+  // PostCard observer calls this). Opening the page stamps nothing.
+  function handlePostVisible(postId) {
+    if (!athlete) return;
+    if (stampedRef.current.has(postId) || myReadIds.has(postId)) return;
+    const post = posts.find((p) => p.id === postId);
+    if (!post || post.authorUid === athlete.id) return; // never stamp my own posts
+    stampedRef.current.add(postId);
+    markCoachPostRead(postId, { uid: athlete.id, name: athlete.name }).catch(() => {});
+  }
+
+  function toggleThread(id) {
+    setOpenThreads((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   const effectiveCoachName =
     coachName || athlete?.coachName || "";
@@ -414,7 +564,7 @@ export default function CoachesCorner() {
         </p>
       </div>
 
-      {topLevel.length === 0 ? (
+      {threads.length === 0 ? (
         <div className="empty">
           <div className="big">🗣️</div>
           <p>
@@ -423,16 +573,19 @@ export default function CoachesCorner() {
           </p>
         </div>
       ) : (
-        topLevel.map((p) => (
-          <PostCard
-            key={p.id}
-            post={p}
-            replies={repliesOf(p.id)}
+        threads.map(({ root, thread }) => (
+          <ThreadCard
+            key={root.id}
+            root={root}
+            thread={thread}
             repliesOf={repliesOf}
             athlete={athlete}
             onReply={handleReply}
-            seenBy={seenByFor(p)}
             seenByFor={seenByFor}
+            onVisible={handlePostVisible}
+            myReadIds={myReadIds}
+            expanded={openThreads.has(root.id)}
+            onToggle={() => toggleThread(root.id)}
           />
         ))
       )}
