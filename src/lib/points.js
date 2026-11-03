@@ -387,16 +387,44 @@ export function hypeBadges(sessions, athletes, asOf = todayStr()) {
  *     Power outranks Relative Effort for cycling: RE is HR-derived and
  *     badly under-prices controlled low-HR riding (Corner decision,
  *     Nov 2, 2026 — unanimous coach vote, adopted by Casey).
- *  2. Strava Relative Effort (suffer score) when present on the session.
- *  3. Run/swim (or any other sport) with HR: hrTSS = hours × (avg HR / threshold HR)² × 100.
+ *  2. Strava Relative Effort (suffer score) when present on the session —
+ *     EXCEPT running and skiing, which never price off RE (Casey decision,
+ *     Nov 2, 2026: RE killed for run/ski after the receipts showed it
+ *     inflating hard long runs ~19% and halving easy aerobic runs; those
+ *     sports fall through to hrTSS or the estimate). Swim keeps RE: pool
+ *     HR is unreliable, so a watch RE is no worse than the alternatives.
+ *  3. Any sport with HR: hrTSS = hours × (avg HR / threshold HR)² × 100.
  *     Threshold HR from the session (thresholdHr) or the athlete profile.
  *  4. Fallback estimate: minutes × difficulty (labelled "est"). For
  *     hiking, elevation gain adds equivalent minutes first (Naismith:
  *     ~10 min per 100 m climbed) — only on this estimated path, since a
  *     measured load already reflects the climbing.
+ * Duration discount (Casey adoption, Nov 2, 2026, "with consensus"):
+ * measured loads (hrTSS, and RE where it still applies) for running,
+ * skiing and swimming are discounted past a per-sport knee — full value
+ * to the knee, a reduced rate beyond it — because duration past that
+ * point costs less recovery per minute than the load number implies.
+ * Cycling is NEVER discounted (Overlord's counter, conceded by Nyx:
+ * TSS already prices actual watts; a knee would double-price duration).
+ * Estimated loads are not discounted — the coach's difficulty already
+ * judges the whole session. Knees: run 120 min @ 0.6, ski 180 @ 0.6,
+ * swim 120 @ 0.7.
  * Returns { value, source } where source is
  * "strava" | "tss" | "hrtss" | "est", or null when nothing is computable.
  */
+const NO_RE_SPORTS = ["running", "skiing"];
+const DURATION_CURVES = {
+  running: { kneeMin: 120, rate: 0.6 },
+  skiing: { kneeMin: 180, rate: 0.6 },
+  swimming: { kneeMin: 120, rate: 0.7 },
+};
+
+function durationFactor(sport, minutes) {
+  const curve = DURATION_CURVES[sport];
+  if (!curve || minutes <= curve.kneeMin) return 1;
+  return (curve.kneeMin + (minutes - curve.kneeMin) * curve.rate) / minutes;
+}
+
 export function computeLoad(session, athlete) {
   const minutes = Number(session?.minutes) || 0;
   if (!(minutes > 0)) return null;
@@ -415,14 +443,20 @@ export function computeLoad(session, athlete) {
   }
 
   const rel = Number(session.relativeEffort);
-  if (session.relativeEffort != null && rel > 0)
-    return { value: Math.round(rel), source: "strava" };
+  if (session.relativeEffort != null && rel > 0 && !NO_RE_SPORTS.includes(session.sport))
+    return {
+      value: Math.round(rel * durationFactor(session.sport, minutes)),
+      source: "strava",
+    };
 
   const avgHr = Number(session.avgHr) || 0;
   const thrHr = Number(session.thresholdHr ?? athlete?.thresholdHr) || 0;
   if (avgHr > 0 && thrHr > 0) {
     const ratio = avgHr / thrHr;
-    return { value: Math.round(hours * ratio * ratio * 100), source: "hrtss" };
+    return {
+      value: Math.round(hours * ratio * ratio * 100 * durationFactor(session.sport, minutes)),
+      source: "hrtss",
+    };
   }
 
   const elevationBonusMin =
@@ -971,7 +1005,7 @@ const COACH_SCHEMA = {
   avgHr: "number, optional — average heart rate (feeds the Load metric)",
   avgPowerW: "number, optional — average power in watts (cycling)",
   npW: "number, optional — normalized power in watts (cycling)",
-  relativeEffort: "number, optional — Strava Relative Effort / suffer score (used as Load; for cycling with power + FTP present, power-based TSS outranks it — Nov 2, 2026)",
+  relativeEffort: "number, optional — Strava Relative Effort / suffer score (used as Load; for cycling with power + FTP present, power-based TSS outranks it; NEVER prices running or skiing — RE was killed for those sports Nov 2, 2026, they use hrTSS or the estimate)",
   maxPower20W: "number, optional — best 20-min mean-max power in watts (feeds the PB board)",
   sourceId:
     "string, optional — the source activity ID (e.g. Strava activity number). Strongly recommended: the app blocks a second session with the same sourceId for the same athlete (duplicate protection)",

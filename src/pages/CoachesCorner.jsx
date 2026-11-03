@@ -196,7 +196,7 @@ function PostCard({ post, replies, repliesOf, athlete, onReply, seenBy, seenByFo
  * post's opening line, the newest activity, and how many posts the viewer
  * hasn't actually seen yet. Expanding renders the full thread.
  */
-function ThreadCard({ root, thread, repliesOf, athlete, onReply, seenByFor, onVisible, myReadIds, expanded, onToggle }) {
+function ThreadCard({ root, thread, repliesOf, athlete, onReply, seenByFor, onVisible, myReadIds, expanded, onToggle, resolved }) {
   const meta = topicMeta(root.topic);
   const latest = thread[thread.length - 1];
   const replyCount = thread.length - 1;
@@ -205,13 +205,18 @@ function ThreadCard({ root, thread, repliesOf, athlete, onReply, seenByFor, onVi
   ).length;
 
   return (
-    <div className="card">
+    <div className="card" style={resolved ? { opacity: 0.55 } : undefined}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
         <strong style={{ color: "var(--accent)", fontSize: 15 }}>{root.coachName}</strong>
         <span className="small muted">
           coach of {root.athleteName} · {prettyDate(root.date)}
         </span>
-        <span className="tag" style={{ marginLeft: "auto" }}>
+        {resolved && (
+          <span className="tag" style={{ marginLeft: "auto" }}>
+            ✓ Resolved
+          </span>
+        )}
+        <span className="tag" style={resolved ? undefined : { marginLeft: "auto" }}>
           {meta.icon} {meta.label}
         </span>
       </div>
@@ -277,9 +282,11 @@ export default function CoachesCorner() {
   const [linkCode, setLinkCode] = useState("");
   const [botBusy, setBotBusy] = useState(false);
   const [openThreads, setOpenThreads] = useState(() => new Set());
+  const [topicFilter, setTopicFilter] = useState("all");
   const stampedRef = useRef(new Set());
 
   const openFlags = flags.filter((f) => !f.resolved);
+  const openFlagOwners = new Set(openFlags.map((f) => f.sessionOwnerName));
   const topLevel = posts.filter((p) => !p.parentId);
   const repliesOf = (id) =>
     posts
@@ -295,6 +302,9 @@ export default function CoachesCorner() {
       return { root, thread, lastActivity: postTime(thread[thread.length - 1]) };
     })
     .sort((a, b) => b.lastActivity - a.lastActivity);
+  const visibleThreads = threads.filter(
+    ({ root }) => topicFilter === "all" || root.topic === topicFilter
+  );
 
   const readsByPost = {};
   for (const r of reads) {
@@ -564,6 +574,38 @@ export default function CoachesCorner() {
         </p>
       </div>
 
+      {threads.length > 0 && (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "4px 0 12px" }}>
+          <button
+            className="chip"
+            type="button"
+            onClick={() => setTopicFilter("all")}
+            style={
+              topicFilter === "all"
+                ? { background: "var(--accent)", color: "#0b0e14", fontWeight: 700 }
+                : undefined
+            }
+          >
+            All topics
+          </button>
+          {TOPICS.map((t) => (
+            <button
+              key={t.key}
+              className="chip"
+              type="button"
+              onClick={() => setTopicFilter(t.key)}
+              style={
+                topicFilter === t.key
+                  ? { background: "var(--accent)", color: "#0b0e14", fontWeight: 700 }
+                  : undefined
+              }
+            >
+              {t.icon} {t.label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {threads.length === 0 ? (
         <div className="empty">
           <div className="big">🗣️</div>
@@ -572,22 +614,27 @@ export default function CoachesCorner() {
             calibration and the first 14-day handicap review.
           </p>
         </div>
+      ) : visibleThreads.length === 0 ? (
+        <div className="empty">
+          <p>No threads in this topic yet.</p>
+        </div>
       ) : (
-        threads.map(({ root, thread }) => (
-          <ThreadCard
-            key={root.id}
-            root={root}
-            thread={thread}
-            repliesOf={repliesOf}
-            athlete={athlete}
-            onReply={handleReply}
-            seenByFor={seenByFor}
-            onVisible={handlePostVisible}
-            myReadIds={myReadIds}
-            expanded={openThreads.has(root.id)}
-            onToggle={() => toggleThread(root.id)}
-          />
-        ))
+        visibleThreads.map(({ root, thread }) => (
+            <ThreadCard
+              key={root.id}
+              root={root}
+              thread={thread}
+              repliesOf={repliesOf}
+              athlete={athlete}
+              onReply={handleReply}
+              seenByFor={seenByFor}
+              onVisible={handlePostVisible}
+              myReadIds={myReadIds}
+              expanded={openThreads.has(root.id)}
+              onToggle={() => toggleThread(root.id)}
+              resolved={root.topic === "flagged" && !openFlagOwners.has(root.athleteName)}
+            />
+          ))
       )}
     </div>
   );
