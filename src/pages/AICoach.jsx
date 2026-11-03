@@ -131,9 +131,11 @@ activity file (Strava power curve, Garmin / pool splits):
                                  // power60minW / power20minW / power5minW /
                                  // power1minW / power5sW
       "run5k": "19:42",          // times — seconds or "MM:SS". Any of:
-                                 // run10k / run5k / run1k / run400m ·
-                                 // swim1500 / swim400 / swim200 / swim100 /
-                                 // swim50 · ski10k / ski1k
+                                 // run10k / run5k · swim1500 / swim400 /
+                                 // swim200 · ski10k
+                                 // (short marks — swim 50/100, run 400m/1k,
+                                 // ski 1k — left the PB board Nov 2, 2026:
+                                 // too short to measure honestly)
       "lifts": { "squat": { "weightKg": 120, "reps": 5 } },
       "bestSet": { "label": "Weighted pull-up", "weightKg": 20, "reps": 5 }
     }

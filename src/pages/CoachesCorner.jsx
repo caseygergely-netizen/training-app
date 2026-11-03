@@ -75,7 +75,7 @@ function PostCard({ post, replies, repliesOf, athlete, onReply, seenBy, seenByFo
           </span>
         )}
       </div>
-      <div style={{ marginTop: 8, fontSize: 14, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>
+      <div style={{ marginTop: 8, fontSize: 14, lineHeight: 1.55, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
         {post.body}
       </div>
       {seenBy && seenBy.length > 0 && (

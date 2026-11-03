@@ -372,7 +372,7 @@ function SessionCard({ session, athleteName, isMine, athlete, ownerAthlete, open
             <>
               <strong style={{ color: "var(--text)" }}>Workout</strong>
               <br />
-              {session.details}
+              <span style={{ overflowWrap: "anywhere" }}>{session.details}</span>
               <br />
               <br />
             </>

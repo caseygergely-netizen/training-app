@@ -29,14 +29,6 @@ const METRICS = {
       key: "run10k", label: "Best 10 km", kind: "aerobic",
       get: (p) => p.run10k && { text: formatDuration(p.run10k.value), date: p.run10k.date },
     },
-    {
-      key: "run1k", label: "Best 1 km", kind: "anaerobic",
-      get: (p) => p.run1k && { text: formatDuration(p.run1k.value), date: p.run1k.date },
-    },
-    {
-      key: "run400m", label: "Best 400 m", kind: "anaerobic",
-      get: (p) => p.run400m && { text: formatDuration(p.run400m.value), date: p.run400m.date },
-    },
   ],
   swimming: [
     {
@@ -50,14 +42,6 @@ const METRICS = {
     {
       key: "swimCssPace", label: "CSS pace (per 100 m)", kind: "aerobic",
       get: (p) => p.swimCssPace && { text: formatDuration(p.swimCssPace.value), date: p.swimCssPace.date },
-    },
-    {
-      key: "swim100", label: "Best 100 m", kind: "anaerobic",
-      get: (p) => p.swim100 && { text: formatDuration(p.swim100.value), date: p.swim100.date },
-    },
-    {
-      key: "swim50", label: "Best 50 m", kind: "anaerobic",
-      get: (p) => p.swim50 && { text: formatDuration(p.swim50.value), date: p.swim50.date },
     },
   ],
   cycling: [
@@ -98,10 +82,6 @@ const METRICS = {
           estimated: p.ski10k.estimated,
           note: "condition-dependent",
         },
-    },
-    {
-      key: "ski1k", label: "Best 1 km", kind: "anaerobic",
-      get: (p) => p.ski1k && { text: formatDuration(p.ski1k.value), date: p.ski1k.date, note: "condition-dependent" },
     },
   ],
   strength: [

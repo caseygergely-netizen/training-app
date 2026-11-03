@@ -382,9 +382,12 @@ export function hypeBadges(sessions, athletes, asOf = todayStr()) {
  *  0. Estimated-load sports (strength / pilates / yoga): ALWAYS the
  *     estimate — HR-derived numbers can't see muscular load and must
  *     never re-price these sessions (Corner decision, Nov 1, 2026).
- *  1. Strava Relative Effort (suffer score) when present on the session.
- *  2. Cycling with power: TSS = hours × (NP or avg power / FTP)² × 100.
+ *  1. Cycling with power: TSS = hours × (NP or avg power / FTP)² × 100.
  *     FTP from the session (ftpW) or the athlete profile (ftpW).
+ *     Power outranks Relative Effort for cycling: RE is HR-derived and
+ *     badly under-prices controlled low-HR riding (Corner decision,
+ *     Nov 2, 2026 — unanimous coach vote, adopted by Casey).
+ *  2. Strava Relative Effort (suffer score) when present on the session.
  *  3. Run/swim (or any other sport) with HR: hrTSS = hours × (avg HR / threshold HR)² × 100.
  *     Threshold HR from the session (thresholdHr) or the athlete profile.
  *  4. Fallback estimate: minutes × difficulty (labelled "est"). For
@@ -404,16 +407,16 @@ export function computeLoad(session, athlete) {
     return { value: Math.round(minutes * difficulty), source: "est" };
   }
 
-  const rel = Number(session.relativeEffort);
-  if (session.relativeEffort != null && rel > 0)
-    return { value: Math.round(rel), source: "strava" };
-
   const ftp = Number(session.ftpW ?? athlete?.ftpW) || 0;
   const power = Number(session.npW ?? session.avgPowerW) || 0;
   if (session.sport === "cycling" && power > 0 && ftp > 0) {
     const ratio = power / ftp;
     return { value: Math.round(hours * ratio * ratio * 100), source: "tss" };
   }
+
+  const rel = Number(session.relativeEffort);
+  if (session.relativeEffort != null && rel > 0)
+    return { value: Math.round(rel), source: "strava" };
 
   const avgHr = Number(session.avgHr) || 0;
   const thrHr = Number(session.thresholdHr ?? athlete?.thresholdHr) || 0;
@@ -968,7 +971,7 @@ const COACH_SCHEMA = {
   avgHr: "number, optional — average heart rate (feeds the Load metric)",
   avgPowerW: "number, optional — average power in watts (cycling)",
   npW: "number, optional — normalized power in watts (cycling)",
-  relativeEffort: "number, optional — Strava Relative Effort / suffer score (used as Load)",
+  relativeEffort: "number, optional — Strava Relative Effort / suffer score (used as Load; for cycling with power + FTP present, power-based TSS outranks it — Nov 2, 2026)",
   maxPower20W: "number, optional — best 20-min mean-max power in watts (feeds the PB board)",
   sourceId:
     "string, optional — the source activity ID (e.g. Strava activity number). Strongly recommended: the app blocks a second session with the same sourceId for the same athlete (duplicate protection)",
@@ -978,7 +981,7 @@ const COACH_SCHEMA = {
     "cycling power (watts, mean-max for the duration)":
       "{ power60minW, power20minW, power5minW, power1minW, power5sW } — any subset",
     "times (seconds, or \"MM:SS\" strings)":
-      "run10k / run5k / run1k / run400m · swim1500 / swim400 / swim200 / swim100 / swim50 · ski10k / ski1k — any subset, as keys of the bests object",
+      "run10k / run5k · swim1500 / swim400 / swim200 · ski10k — any subset, as keys of the bests object (short marks — swim 50/100, run 400m/1k, ski 1k — left the PB board Nov 2, 2026; do not submit them)",
     swimCss:
       'include BOTH swim400 and swim200 in the same session\'s bests — CSS pace is derived from the pair',
     "ski conditions": 'add skiConditions: "cold, fast" alongside ski bests — ski times are condition-dependent',
