@@ -61,7 +61,7 @@ export default function Login() {
           TRAINING<span style={{ color: "var(--accent)" }}>APP</span>
         </h1>
         <p className="muted small">
-          Compete with friends. Your AI coach scores every session.
+          Friends Obsessed with Metrics & One-upmanship. Your AI coach scores every session.
         </p>
 
         <div className="sport-pick" style={{ marginBottom: 14 }}>

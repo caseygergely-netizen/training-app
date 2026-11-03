@@ -31,7 +31,7 @@ function Header() {
   return (
     <header className="topbar">
       <Link to="/" className="brand">
-        COMPETITION<span>OF MEN</span>
+        FOMO<span>LEAGUE</span>
       </Link>
       <div className="topbar-actions">
         <Link className="chip" to="/invite">
@@ -125,7 +125,7 @@ function Shell() {
       <div className="app-shell">
         <div className="page center" style={{ paddingTop: 72 }}>
           <div className="brand" style={{ fontSize: 22 }}>
-            COMPETITION<span>OF MEN</span>
+            FOMO<span>LEAGUE</span>
           </div>
           <div className="skel" style={{ height: 110, marginTop: 24 }} />
           <p className="small muted" style={{ marginTop: 14 }}>
