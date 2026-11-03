@@ -10,10 +10,14 @@ score difficulty, how to manage the handicap, and how to read the board.
 
     session points = Load × handicap
 
-- Load: the session's training load (TSS-style). The app takes Strava
-  Relative Effort when provided, else cycling TSS from power vs FTP, else
-  hrTSS from heart rate vs threshold HR. Where no measured load exists
-  (most swim and strength work), Load is ESTIMATED as minutes × difficulty.
+- Load: the session's training load (TSS-style). Priced in this order:
+  estimated sports (strength / pilates / yoga) always use minutes ×
+  difficulty; cycling with power + FTP uses TSS; running and skiing NEVER
+  price off Relative Effort (killed Nov 2, 2026) — hrTSS, else the
+  estimate; then Relative Effort (cycling / swim only); then hrTSS; else
+  minutes × difficulty. Measured loads are duration-discounted past a
+  sport cap (run 120 min, ski 180, swim 120 — the excess counts at a
+  reduced rate; cycling is never discounted).
   EXCEPTIONS: strength, pilates and yoga are ALWAYS estimated — heart
   rate cannot see muscular load, so HR / Relative Effort never price
   them. Hiking's estimate adds elevation: ~10 equivalent minutes per
@@ -36,7 +40,9 @@ like Zwift's relative difficulty score. A brutal ski hour and a brutal swim
 hour must score the same. This is what makes all eight sports
 (skiing, running, strength, cycling, swimming, hiking, pilates, yoga)
 compete fairly on one board. Pilates/yoga anchors: gentle yoga ~0.5,
-standard class ~0.7, power yoga / hard reformer ~0.9–1.0. Hiking,
+standard class ~0.7, power yoga / hard reformer ~0.9–1.0. Strength
+anchors (ratified Nov 1, 2026): heavy ≈1.2, moderate/accessory ≈0.8,
+light/mobility ≈0.5 — strength is priced on difficulty alone. Hiking,
 pilates and yoga have no Personal Bests — they count as workouts only.
 
 Scale:
@@ -101,10 +107,12 @@ Optional extras when you have the data (Strava exports, power meters):
 - "avgHr": average heart rate — feeds the Load metric (hrTSS). Never
   prices strength, pilates or yoga (always estimated there).
 - "avgPowerW" / "npW": cycling power — feeds Load (TSS) and the PB board.
-- "relativeEffort": Strava's Relative Effort / suffer score — used as Load directly.
+- "relativeEffort": Strava's Relative Effort / suffer score — used as Load
+  for cycling and swimming only; it NEVER prices running or skiing.
 - "maxPower20W": best 20-minute mean-max power — feeds the cycling PB.
 - "sourceId": the source activity ID (e.g. the Strava activity number).
-  STRONGLY recommended — the app blocks a second session with the same
+  MANDATORY on bot-posted sessions (§8.3); strongly recommended otherwise
+  — the app blocks a second session with the same
   sourceId for the same athlete, so a double-paste or re-send can't
   double-count. (An ID in "details" like "Strava 20759801918" works too.)
 
@@ -116,15 +124,19 @@ you, then you write the session yourself with the audit fields and a
 mandatory sourceId (§8.3). This is the preferred path where available —
 it removes the copy-paste step entirely.
 
-Every session also gets a Load number (TSS-style), shown next to its points:
-Strava Relative Effort if provided, else cycling TSS from power vs FTP, else
-hrTSS from HR vs the athlete's threshold HR (athletes set weight / threshold
-HR / FTP on their profile), else minutes × difficulty, labelled "est".
+Every session also gets a Load number (TSS-style), shown next to its points
+and labelled by its source — priced by the order in §1. (Athletes set
+weight / threshold HR / FTP on their profile; a session may carry its own
+ftpW / thresholdHr, which wins over the profile value.)
 
 C) BEST EFFORTS. Personal bests are pulled from ordinary workouts — there
-are no separate test entries. When a workout CONTAINS a best effort, add a
-"bests" object to the coach block with the efforts you extracted from the
-activity file (Strava power curve, Garmin / pool splits):
+are no separate test entries. HARVEST ON EVERY POST (norm, Nov 2, 2026):
+whenever the activity data supports a best effort, the block MUST carry a
+"bests" object — the PB board fills only from these objects, so a post
+without them leaves the board stale. Extract from the activity file
+(Strava best efforts for runs, the power curve for rides, Garmin / pool
+splits for swims, top sets for strength). Never invent an effort the
+data does not support. The efforts a workout contains go in like this:
 
     "bests": {
       "power20minW": 305,        // cycling mean-max power, watts — any of

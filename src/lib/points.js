@@ -1000,17 +1000,21 @@ const COACH_SCHEMA = {
   distanceKm: "number, optional — decimals welcome, e.g. 33.66",
   elevationGainM: "number, optional — total climbing in metres (hiking; feeds the estimated Load when no measured load exists)",
   details: "string, optional — sets / weights / swim set times",
-  difficulty: "number 0.5–2.0, REQUIRED — set by the AI coach",
+  difficulty: "number 0.5–2.0, REQUIRED — set by the AI coach. Anchors: 1.0 = honest solid hour, 1.5 = hard intervals, 1.8+ = race-grade. Strength is priced on difficulty ONLY (HR / Relative Effort never re-price it): heavy ≈1.2, moderate/accessory ≈0.8, light/mobility ≈0.5 (ratified Nov 1, 2026). Pilates/yoga are estimate-priced the same way.",
   notes: "string, optional — how it felt, what the coach noticed",
   avgHr: "number, optional — average heart rate (feeds the Load metric)",
   avgPowerW: "number, optional — average power in watts (cycling)",
   npW: "number, optional — normalized power in watts (cycling)",
   relativeEffort: "number, optional — Strava Relative Effort / suffer score (used as Load; for cycling with power + FTP present, power-based TSS outranks it; NEVER prices running or skiing — RE was killed for those sports Nov 2, 2026, they use hrTSS or the estimate)",
   maxPower20W: "number, optional — best 20-min mean-max power in watts (feeds the PB board)",
+  ftpW: "number, optional — the athlete's FTP in watts for this ride (cycling; TSS is computed against it — a session-level ftpW wins over the profile FTP)",
+  thresholdHr: "number, optional — the athlete's threshold HR in bpm (feeds hrTSS when present; a session-level value wins over the profile threshold HR)",
   sourceId:
-    "string, optional — the source activity ID (e.g. Strava activity number). Strongly recommended: the app blocks a second session with the same sourceId for the same athlete (duplicate protection)",
+    "string — MANDATORY for bot-posted sessions; strongly recommended for everyone. The source activity ID (e.g. Strava activity number): the app blocks a second session with the same sourceId for the same athlete (duplicate protection)",
   bests:
-    "object, optional — the best efforts CONTAINED IN this workout, extracted from the activity file (Strava power curve, Garmin/pool splits). They feed the Personal Bests board; there are no separate test entries (see 'bests shapes'). Only include efforts the data supports.",
+    "object — HARVEST ON EVERY POST (norm adopted Nov 2, 2026): whenever the activity data supports any best effort, the block MUST carry bests; the Personal Bests board fills ONLY from these objects, and there are no separate test entries (see 'bests shapes'). Runs: Strava's best efforts. Rides: power-curve mean-maxes. Swims: the splits, including the 400+200 pair that derives CSS pace. Strength: top sets (feeds the 1RM estimates). Never invent an effort the data does not support.",
+  "scoring order (mirror this before flagging a score)":
+    "points = Load × handicap. Load order: estimated sports (strength / pilates / yoga) → minutes × difficulty; cycling with power + FTP → TSS; running / skiing NEVER price off Relative Effort (killed Nov 2, 2026) — hrTSS, else the estimate; then Relative Effort (cycling / swim only); then hrTSS; then minutes × difficulty (hiking adds elevation gain ÷ 10 as equivalent minutes). Duration discount on measured loads only: running past 120 min ×0.6, skiing past 180 min ×0.6, swimming past 120 min ×0.7; cycling is never discounted.",
   "bests shapes": {
     "cycling power (watts, mean-max for the duration)":
       "{ power60minW, power20minW, power5minW, power1minW, power5sW } — any subset",
@@ -1150,7 +1154,7 @@ export function parseCoachBlock(text) {
 
   // Optional performance data (Strava exports, power meters, HR straps).
   const perf = {};
-  for (const key of ["avgHr", "avgPowerW", "npW", "relativeEffort", "maxPower20W", "ftpW"]) {
+  for (const key of ["avgHr", "avgPowerW", "npW", "relativeEffort", "maxPower20W", "ftpW", "thresholdHr"]) {
     if (obj[key] != null) {
       if (!(Number(obj[key]) > 0)) problems.push(`${key} must be a number > 0`);
       else perf[key] = Number(obj[key]);
