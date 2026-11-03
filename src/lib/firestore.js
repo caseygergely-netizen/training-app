@@ -224,6 +224,17 @@ export async function setSessionDifficulty(session, difficulty, athlete, by = "a
     handicapUsed: handicap,
     points,
   };
+  // Athlete adjustments carry their direction: the accumulated change the
+  // athlete has made vs the last coach-scored value, so an honest decrease
+  // is visibly credited in the Feed (added Nov 3, 2026, Casey's call). A
+  // coach re-score resets the record.
+  if (by === "athlete") {
+    patch.athletePointsDelta =
+      (Number(session.athletePointsDelta) || 0) +
+      Math.round(points - Number(session.points || 0));
+  } else {
+    patch.athletePointsDelta = null;
+  }
   if (load) {
     patch.load = load.value;
     patch.loadSource = load.source;
@@ -248,17 +259,26 @@ export async function updateSession(session, fields, athlete) {
   const handicap = handicapAt(athlete, session.date);
   const merged = { ...session, ...fields, minutes, difficulty };
   const { points, load } = pointsForSession(merged, athlete, handicap);
+  const difficultyBy =
+    Number(session.difficulty) !== difficulty ? "athlete" : session.difficultyBy;
   const patch = {
     minutes,
     difficulty,
-    difficultyBy:
-      Number(session.difficulty) !== difficulty ? "athlete" : session.difficultyBy,
+    difficultyBy,
     distanceKm: fields.distanceKm != null && fields.distanceKm !== "" ? Number(fields.distanceKm) : null,
     details: String(fields.details || ""),
     notes: String(fields.notes || ""),
     handicapUsed: handicap,
     points,
   };
+  // Keep the athlete-adjustment direction current (see setSessionDifficulty):
+  // accumulate this edit's points change while the session stands as
+  // athlete-adjusted.
+  if (difficultyBy === "athlete" && points !== Number(session.points || 0)) {
+    patch.athletePointsDelta =
+      (Number(session.athletePointsDelta) || 0) +
+      Math.round(points - Number(session.points || 0));
+  }
   if (fields.sourceId !== undefined)
     patch.sourceId = fields.sourceId ? String(fields.sourceId) : null;
   if (load) {

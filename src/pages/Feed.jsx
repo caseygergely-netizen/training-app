@@ -289,6 +289,22 @@ function FlagControl({ session, athlete, ownerName, openFlags }) {
   );
 }
 
+function AthleteAdjustedTag({ session }) {
+  const d = Number(session.athletePointsDelta);
+  if (!Number.isFinite(d) || d === 0) {
+    return <span className="tag">athlete adjusted</span>;
+  }
+  if (d < 0) {
+    // An athlete lowering their own score gets visible credit (accent tag).
+    return (
+      <span className="tag" style={{ color: "var(--accent)", borderColor: "var(--accent)" }}>
+        athlete adjusted ↓ {d} pts
+      </span>
+    );
+  }
+  return <span className="tag">athlete adjusted ↑ +{d} pts</span>;
+}
+
 function SessionCard({ session, athleteName, isMine, athlete, ownerAthlete, openFlags = [] }) {
   const [open, setOpen] = useState(false);
   const meta = SPORT_META[session.sport] || { label: session.sport, icon: "🏅" };
@@ -325,7 +341,7 @@ function SessionCard({ session, athleteName, isMine, athlete, ownerAthlete, open
           difficulty <span className="diff-pill">{Number(session.difficulty).toFixed(1)}</span>
         </span>
         {session.difficultyBy === "athlete" ? (
-          <span className="tag">athlete adjusted</span>
+          <AthleteAdjustedTag session={session} />
         ) : needsReview ? (
           <span className="tag review">awaiting coach review</span>
         ) : (
