@@ -63,6 +63,9 @@ function EditControl({ session, athlete }) {
   const [difficulty, setDifficulty] = useState(String(session.difficulty));
   const [details, setDetails] = useState(session.details || "");
   const [notes, setNotes] = useState(session.notes || "");
+  const [bestsText, setBestsText] = useState(
+    session.bests ? JSON.stringify(session.bests) : ""
+  );
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
@@ -77,12 +80,33 @@ function EditControl({ session, athlete }) {
       setErr("Difficulty must be between 0.5 and 2.0.");
       return;
     }
+    // Bests attach: pasted JSON sets them; blank clears existing bests;
+    // blank with none stored leaves the field untouched.
+    let bestsPatch;
+    const bt = bestsText.trim();
+    if (bt) {
+      try {
+        bestsPatch = JSON.parse(bt);
+      } catch {
+        setErr("Bests must be valid JSON — your coach can give you the exact text to paste.");
+        return;
+      }
+    } else if (session.bests) {
+      bestsPatch = null;
+    }
     setBusy(true);
     setErr("");
     try {
       await updateSession(
         session,
-        { minutes: mins, distanceKm, difficulty: diff, details, notes },
+        {
+          minutes: mins,
+          distanceKm,
+          difficulty: diff,
+          details,
+          notes,
+          ...(bestsPatch !== undefined ? { bests: bestsPatch } : {}),
+        },
         athlete
       );
       setEditing(false);
@@ -140,6 +164,15 @@ function EditControl({ session, athlete }) {
       <div className="field">
         <label>Notes</label>
         <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
+      </div>
+      <div className="field">
+        <label>Bests ⚡ — best efforts in this workout (feeds the PB board)</label>
+        <textarea
+          value={bestsText}
+          onChange={(e) => setBestsText(e.target.value)}
+          rows={2}
+          placeholder='Paste from your coach, e.g. {"swim400Sec": 313, "swim200Sec": 147}'
+        />
       </div>
       <p className="small muted">
         Saving recomputes this session's points and load with the handicap in

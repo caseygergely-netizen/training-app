@@ -30,7 +30,7 @@ import {
   browserLocalPersistence,
 } from "firebase/auth";
 import { buildSeedData } from "./seed";
-import { clampDifficulty, handicapAt, pointsForSession, todayStr } from "./points";
+import { clampDifficulty, cleanBests, handicapAt, pointsForSession, todayStr } from "./points";
 
 /* ---------------- hooks ---------------- */
 
@@ -252,6 +252,10 @@ export async function deleteSession(session) {
  * details / notes). Points and Load are recomputed with the handicap in
  * effect on the session date, so a typo fix flows through the board
  * immediately. A difficulty change is marked difficultyBy='athlete'.
+ * fields.bests (added Nov 3, 2026) attaches or replaces the session's best
+ * efforts — the athlete-side route for backfilling the PB board, since bots
+ * cannot edit sessions. Pass an object to set (validated by cleanBests) or
+ * null to clear; leave undefined to keep what's stored.
  */
 export async function updateSession(session, fields, athlete) {
   const minutes = Number(fields.minutes);
@@ -281,6 +285,15 @@ export async function updateSession(session, fields, athlete) {
   }
   if (fields.sourceId !== undefined)
     patch.sourceId = fields.sourceId ? String(fields.sourceId) : null;
+  if (fields.bests !== undefined) {
+    if (fields.bests === null) {
+      patch.bests = null;
+    } else {
+      const cleaned = cleanBests(fields.bests);
+      if (cleaned.problem) throw new Error(cleaned.problem);
+      patch.bests = cleaned.bests;
+    }
+  }
   if (load) {
     patch.load = load.value;
     patch.loadSource = load.source;
