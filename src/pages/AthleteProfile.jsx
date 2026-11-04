@@ -193,8 +193,8 @@ export default function AthleteProfile() {
         <h3>🏆 Trophies — {trophies.length} weekly win{trophies.length === 1 ? "" : "s"}</h3>
         {trophies.length === 0 ? (
           <p className="muted small">
-            No weekly race wins yet. Trophies go to whoever tops the Versus
-            racetrack when the week closes Sunday night.
+            No weekly race wins yet. Trophies go to whoever tops the weekly
+            race when the week closes Sunday night.
           </p>
         ) : (
           trophies.slice(0, 12).map((w) => (

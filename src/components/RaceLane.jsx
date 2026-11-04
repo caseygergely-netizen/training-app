@@ -19,7 +19,7 @@ function initials(name) {
 }
 
 /**
- * One lane of a race board (shared by Versus and the Dashboard boards).
+ * One lane of a race board (used by the Dashboard's weekly + quarterly races).
  * Track position scales with points: the leader sits at 92% (at the flag),
  * everyone else proportionally behind. Zero points = at the gate (4%).
  * `row` is a standings row: { athlete, points, rank }.

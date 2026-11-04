@@ -7,6 +7,7 @@ import {
   dailyPoints,
   hypeBadges,
   weeklyStandings,
+  weeklyWinners,
   quarterlyStandings,
   mondayOf,
   addDays,
@@ -43,10 +44,11 @@ export default function Dashboard() {
   const asOf = todayStr();
   const board = rolling14Day(sessions, athletes, asOf);
   // The other two races (Casey's boards direction, Nov 3, 2026): the
-  // weekly 7-day race (full standings + trophies live on Versus) and the
+  // weekly 7-day race (past winners listed below the races) and the
   // quarterly season race. All-time totals stay on athlete profiles as
   // unranked records — never a ranked board.
   const weekRows = weeklyStandings(sessions, athletes, mondayOf(asOf));
+  const pastWinners = weeklyWinners(sessions, athletes, asOf);
   const { quarter, rows: quarterRows } = quarterlyStandings(sessions, athletes, asOf);
   const badges = hypeBadges(sessions, athletes, asOf);
   const hasDemo =
@@ -187,10 +189,8 @@ export default function Dashboard() {
               />
             ))}
             <p className="small muted" style={{ marginTop: 6 }}>
-              Week of {prettyDate(mondayOf(asOf))} → {prettyDate(addDays(mondayOf(asOf), 6))} ·{" "}
-              <Link to="/versus" style={{ color: "var(--accent)", fontWeight: 700 }}>
-                full race + trophies on Versus ⚔️
-              </Link>
+              Week of {prettyDate(mondayOf(asOf))} → {prettyDate(addDays(mondayOf(asOf), 6))} ·
+              winner takes the trophy 🏆 — past winners below.
             </p>
           </div>
 
@@ -209,6 +209,29 @@ export default function Dashboard() {
               game — totals reset when the quarter turns. All-time records
               live on each athlete's profile, unranked by design.
             </p>
+          </div>
+
+          <h1 style={{ fontSize: 18, marginTop: 18 }}>🏆 Past weekly winners</h1>
+          <div className="card" style={{ marginTop: 8 }}>
+            {pastWinners.length === 0 ? (
+              <p className="small muted">
+                No completed weeks yet — the first trophy lands when this
+                week closes Sunday night.
+              </p>
+            ) : (
+              pastWinners.slice(0, 8).map((w) => (
+                <div className="hist-row" key={w.weekStart}>
+                  <div>
+                    🏆 Week of {prettyDate(w.weekStart)}
+                    <div className="small muted">
+                      {w.winners.map((a) => a.name).join(" & ")} won with{" "}
+                      {w.points} pts
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 18 }}>🏆</div>
+                </div>
+              ))
+            )}
           </div>
 
           <h1 style={{ fontSize: 18, marginTop: 18 }}>🔥 Hype</h1>

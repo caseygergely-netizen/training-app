@@ -2,7 +2,6 @@ import React, { createContext, useContext, useEffect, useState } from "react";
 import { BrowserRouter, Routes, Route, Link, Navigate, useNavigate } from "react-router-dom";
 import Nav from "./components/Nav.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
-import Versus from "./pages/Versus.jsx";
 import Feed from "./pages/Feed.jsx";
 import LogSession from "./pages/LogSession.jsx";
 import Benchmarks from "./pages/Benchmarks.jsx";
@@ -79,6 +78,9 @@ function Header() {
           >
             Sign out
           </button>
+          <div className="small muted" style={{ marginTop: 10 }}>
+            FOMO · Friends Obsessed with Metrics & One-upmanship
+          </div>
         </div>
       )}
     </header>
@@ -148,7 +150,6 @@ function Shell() {
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/" element={<RequireAuth><Dashboard /></RequireAuth>} />
-        <Route path="/versus" element={<RequireAuth><Versus /></RequireAuth>} />
         <Route path="/feed" element={<RequireAuth><Feed /></RequireAuth>} />
         <Route path="/log" element={<RequireAuth><LogSession /></RequireAuth>} />
         <Route path="/tests" element={<RequireAuth><Benchmarks /></RequireAuth>} />

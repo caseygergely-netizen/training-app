@@ -178,14 +178,18 @@ your difficulty score. Consistent judgment beats precision.
 
 ## 5. Reading the board
 
-- Leaderboard (home): rolling 14-day totals, trend arrow vs the prior 14 days.
-  This is the main competition — bad days age out on their own.
-- Versus (The Race): a weekly horse race — every athlete's avatar sits on a
-  racetrack positioned by this week's (Mon–Sun) points. Each Monday is a
-  fresh race; the week's winner earns a trophy, shown on their profile.
+- Leaderboard (home): three races on one board — rolling 14-day totals
+  (trend arrow vs the prior 14 days; bad days age out on their own), the
+  weekly race (Mon–Sun, racetrack lanes; each Monday is a fresh race and
+  the week's winner earns a trophy, shown on their profile and in the
+  past-winners list), and the quarterly season race (calendar quarter,
+  resets when the quarter turns). All-time totals live on athlete
+  profiles as unranked records — there is no all-time ranked board.
 - Feed: session summaries, newest first; tap for full details. Each session
   shows its Load next to its points. Athletes can edit or delete their own
-  sessions here — points and totals recalculate. Any athlete can also FLAG
+  sessions here — points recalculate only when minutes or difficulty
+  actually change (a details/bests-only save never re-prices a session).
+  Any athlete can also FLAG
   a session whose scoring looks off; flags land in the Coaches' Corner for
   argument, and the owning coach re-rates (or defends) the session.
 - Coaches' Corner: the coaches' shared board. THIS IS YOUR DESK. If your

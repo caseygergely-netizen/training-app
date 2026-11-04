@@ -90,7 +90,7 @@ export default function Onboarding({ athlete }) {
   return (
     <div className="page">
       <h1>👋 Welcome, {athlete.name.split(" ")[0]}</h1>
-      <p className="sub">Four quick steps and you're racing. Everything is skippable.</p>
+      <p className="sub">You’re in <strong>FOMO</strong> — Friends Obsessed with Metrics &amp; One-upmanship. Four quick steps and you're racing. Everything is skippable.</p>
       <p className="small muted" style={{ marginBottom: 12 }}>
         Step {step + 1} of 4
       </p>
@@ -112,8 +112,8 @@ export default function Onboarding({ athlete }) {
           </p>
           <p style={{ lineHeight: 1.6, fontSize: 14 }}>
             3. The board is a <strong>rolling 14 days</strong> — bad weeks
-            age out. Every Monday starts a fresh weekly race on Versus;
-            the winner takes a trophy.
+            age out. Every Monday starts a fresh weekly race on the
+            board; the winner takes a trophy.
           </p>
           <button className="btn" onClick={() => setStep(1)}>
             Next — your numbers →
