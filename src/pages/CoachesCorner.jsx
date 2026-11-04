@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { useAuth } from "../App.jsx";
 import {
   useCoachPosts,
-  useCoachReads,
+  useCoachReadsForPosts,
   useMyCoachBot,
   useReviewFlags,
   addCoachPost,
@@ -271,7 +271,9 @@ function ThreadCard({ root, thread, repliesOf, athlete, onReply, seenByFor, onVi
 export default function CoachesCorner() {
   const { athlete } = useAuth();
   const { posts, loading } = useCoachPosts();
-  const { reads } = useCoachReads();
+  // Receipts scoped to the loaded posts — the unscoped fetch dropped
+  // receipts at random once coachReads passed 500 docs (Nov 4, 2026).
+  const { reads } = useCoachReadsForPosts(posts.map((p) => p.id));
   const { flags } = useReviewFlags();
   const { bot } = useMyCoachBot(athlete?.id);
   const [coachName, setCoachName] = useState("");

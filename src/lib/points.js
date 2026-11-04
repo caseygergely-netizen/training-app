@@ -243,12 +243,11 @@ export function weeklyMatchups(sessions, athletes, weekStartStr) {
   return pairs;
 }
 
-/** One week's Mon–Sun totals per athlete: points, sessions, minutes. Ranked. */
-export function weeklyStandings(sessions, athletes, weekStartStr) {
-  const weekEnd = addDays(weekStartStr, 6);
+/** Totals per athlete over an arbitrary date range. Ranked. */
+export function rangeStandings(sessions, athletes, startStr, endStr) {
   const rows = athletes.map((a) => {
     const mine = sessions.filter(
-      (s) => s.athleteId === a.id && s.date >= weekStartStr && s.date <= weekEnd
+      (s) => s.athleteId === a.id && s.date >= startStr && s.date <= endStr
     );
     return {
       athlete: a,
@@ -259,6 +258,32 @@ export function weeklyStandings(sessions, athletes, weekStartStr) {
   });
   rows.sort((x, y) => y.points - x.points);
   return rows.map((r, i) => ({ ...r, rank: i + 1 }));
+}
+
+/** One week's Mon–Sun totals per athlete: points, sessions, minutes. Ranked. */
+export function weeklyStandings(sessions, athletes, weekStartStr) {
+  return rangeStandings(sessions, athletes, weekStartStr, addDays(weekStartStr, 6));
+}
+
+/** Calendar quarter containing dateStr: { start, end, label } — "Q4 2026". */
+export function quarterOf(dateStr) {
+  const [y, m] = dateStr.split("-").map(Number);
+  const q = Math.floor((m - 1) / 3); // 0..3
+  const startMonth = q * 3 + 1;
+  const endMonth = startMonth + 2;
+  const lastDay = new Date(Date.UTC(y, endMonth, 0)).getUTCDate();
+  const pad = (n) => String(n).padStart(2, "0");
+  return {
+    start: `${y}-${pad(startMonth)}-01`,
+    end: `${y}-${pad(endMonth)}-${pad(lastDay)}`,
+    label: `Q${q + 1} ${y}`,
+  };
+}
+
+/** The quarterly season race: standings for the current calendar quarter. */
+export function quarterlyStandings(sessions, athletes, asOf = todayStr()) {
+  const q = quarterOf(asOf);
+  return { quarter: q, rows: rangeStandings(sessions, athletes, q.start, asOf) };
 }
 
 /**

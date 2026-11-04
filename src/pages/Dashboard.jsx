@@ -6,11 +6,16 @@ import {
   rolling14Day,
   dailyPoints,
   hypeBadges,
+  weeklyStandings,
+  quarterlyStandings,
+  mondayOf,
   addDays,
   todayStr,
+  prettyDate,
   SPORT_META,
 } from "../lib/points.js";
 import Sparkline from "../components/Sparkline.jsx";
+import RaceLane, { LANE_COLORS } from "../components/RaceLane.jsx";
 import { useState } from "react";
 
 function TrendArrow({ delta, prior }) {
@@ -37,6 +42,12 @@ export default function Dashboard() {
   const loading = aLoading || sLoading;
   const asOf = todayStr();
   const board = rolling14Day(sessions, athletes, asOf);
+  // The other two races (Casey's boards direction, Nov 3, 2026): the
+  // weekly 7-day race (full standings + trophies live on Versus) and the
+  // quarterly season race. All-time totals stay on athlete profiles as
+  // unranked records — never a ranked board.
+  const weekRows = weeklyStandings(sessions, athletes, mondayOf(asOf));
+  const { quarter, rows: quarterRows } = quarterlyStandings(sessions, athletes, asOf);
   const badges = hypeBadges(sessions, athletes, asOf);
   const hasDemo =
     athletes.some((a) => a.demo) || sessions.some((s) => s.demo);
@@ -92,7 +103,10 @@ export default function Dashboard() {
   return (
     <div className="page">
       <h1>🏆 Leaderboard</h1>
-      <p className="sub">Rolling 14 days · points = load × handicap</p>
+      <p className="sub">
+        Three races at once: rolling 14 days · this week's sprint · the{" "}
+        {quarter.label} season race — points = load × handicap in all three
+      </p>
       {athlete && mySessions.length === 0 && sessions.length > 0 && (
         <div className="card" style={{ borderColor: "#3a4a1f" }}>
           <h3>🏁 Start here</h3>
@@ -162,6 +176,41 @@ export default function Dashboard() {
             })}
           </div>
 
+          <h1 style={{ fontSize: 18, marginTop: 18 }}>🏁 This week's race</h1>
+          <div className="card race-card" style={{ marginTop: 8 }}>
+            {weekRows.map((row, i) => (
+              <RaceLane
+                key={row.athlete.id}
+                row={row}
+                topPoints={weekRows.length > 0 ? weekRows[0].points : 0}
+                color={LANE_COLORS[i % LANE_COLORS.length]}
+              />
+            ))}
+            <p className="small muted" style={{ marginTop: 6 }}>
+              Week of {prettyDate(mondayOf(asOf))} → {prettyDate(addDays(mondayOf(asOf), 6))} ·{" "}
+              <Link to="/versus" style={{ color: "var(--accent)", fontWeight: 700 }}>
+                full race + trophies on Versus ⚔️
+              </Link>
+            </p>
+          </div>
+
+          <h1 style={{ fontSize: 18, marginTop: 18 }}>📅 Season race — {quarter.label}</h1>
+          <div className="card race-card" style={{ marginTop: 8 }}>
+            {quarterRows.map((row, i) => (
+              <RaceLane
+                key={row.athlete.id}
+                row={row}
+                topPoints={quarterRows.length > 0 ? quarterRows[0].points : 0}
+                color={LANE_COLORS[i % LANE_COLORS.length]}
+              />
+            ))}
+            <p className="small muted" style={{ marginTop: 6 }}>
+              {prettyDate(quarter.start)} → {prettyDate(quarter.end)} · the long
+              game — totals reset when the quarter turns. All-time records
+              live on each athlete's profile, unranked by design.
+            </p>
+          </div>
+
           <h1 style={{ fontSize: 18, marginTop: 18 }}>🔥 Hype</h1>
           <div className="badges">
             <div className="badge">
@@ -213,12 +262,11 @@ export default function Dashboard() {
           </div>
 
           <div className="notice" style={{ marginTop: 14 }}>
-            Bad days age out on their own — the board only ever counts the last
-            14 days. Every Monday is a fresh start on{" "}
-            <Link to="/versus" style={{ color: "var(--accent)", fontWeight: 700 }}>
-              Versus ⚔️
-            </Link>
-            .
+            Bad days age out on their own — the rolling board only ever counts
+            the last 14 days, the weekly race resets every Monday, and the
+            season race turns over with the quarter. There is no all-time
+            ranked board: career totals sit on each athlete's profile as
+            records, not a race nobody new could ever win.
           </div>
         </>
       )}

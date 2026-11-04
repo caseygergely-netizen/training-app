@@ -55,6 +55,15 @@ export function useAthletes() {
   return { athletes, loading };
 }
 
+/** Millis for a createdAt that may be a Timestamp, an ISO string, or absent. */
+function createdMillis(v) {
+  if (!v) return 0;
+  if (typeof v.toMillis === "function") return v.toMillis();
+  if (typeof v.seconds === "number") return v.seconds * 1000;
+  const parsed = Date.parse(v);
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
 export function useSessions(max = 500) {
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -71,7 +80,16 @@ export function useSessions(max = 500) {
     const unsub = onSnapshot(
       q,
       (snap) => {
-        setSessions(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        // Newest first, properly chronological (Casey, Nov 3, 2026): the
+        // query only orders by date, so same-day sessions used to fall back
+        // to document-ID order. Tiebreak client-side on createdAt — no
+        // composite index needed, and aggregating consumers don't care.
+        list.sort((a, b) => {
+          if (a.date !== b.date) return a.date < b.date ? 1 : -1;
+          return createdMillis(b.createdAt) - createdMillis(a.createdAt);
+        });
+        setSessions(list);
         setLoading(false);
       },
       () => setLoading(false)
@@ -260,28 +278,44 @@ export async function deleteSession(session) {
 export async function updateSession(session, fields, athlete) {
   const minutes = Number(fields.minutes);
   const difficulty = clampDifficulty(fields.difficulty);
-  const handicap = handicapAt(athlete, session.date);
-  const merged = { ...session, ...fields, minutes, difficulty };
-  const { points, load } = pointsForSession(merged, athlete, handicap);
-  const difficultyBy =
-    Number(session.difficulty) !== difficulty ? "athlete" : session.difficultyBy;
+  // Re-price guard (Nov 4, 2026): stored points never rewrite. Recompute
+  // ONLY when a scoring input actually changed — a save that touches only
+  // details / notes / distance / bests must not silently re-price a
+  // grandfathered session under today's rules (Casey's Nov 2 long run
+  // dropped 140 → 95 on an innocent edit-save after the RE kill, because
+  // every save recomputed). Perf fields aren't editable from the Feed
+  // form, so minutes + difficulty are the scoring surface here.
+  const scoringChanged =
+    minutes !== Number(session.minutes) ||
+    difficulty !== clampDifficulty(session.difficulty);
   const patch = {
     minutes,
     difficulty,
-    difficultyBy,
     distanceKm: fields.distanceKm != null && fields.distanceKm !== "" ? Number(fields.distanceKm) : null,
     details: String(fields.details || ""),
     notes: String(fields.notes || ""),
-    handicapUsed: handicap,
-    points,
   };
-  // Keep the athlete-adjustment direction current (see setSessionDifficulty):
-  // accumulate this edit's points change while the session stands as
-  // athlete-adjusted.
-  if (difficultyBy === "athlete" && points !== Number(session.points || 0)) {
-    patch.athletePointsDelta =
-      (Number(session.athletePointsDelta) || 0) +
-      Math.round(points - Number(session.points || 0));
+  if (scoringChanged) {
+    const handicap = handicapAt(athlete, session.date);
+    const merged = { ...session, ...fields, minutes, difficulty };
+    const { points, load } = pointsForSession(merged, athlete, handicap);
+    const difficultyBy =
+      Number(session.difficulty) !== difficulty ? "athlete" : session.difficultyBy;
+    patch.difficultyBy = difficultyBy;
+    patch.handicapUsed = handicap;
+    patch.points = points;
+    // Keep the athlete-adjustment direction current (see
+    // setSessionDifficulty): accumulate this edit's points change while
+    // the session stands as athlete-adjusted.
+    if (difficultyBy === "athlete" && points !== Number(session.points || 0)) {
+      patch.athletePointsDelta =
+        (Number(session.athletePointsDelta) || 0) +
+        Math.round(points - Number(session.points || 0));
+    }
+    if (load) {
+      patch.load = load.value;
+      patch.loadSource = load.source;
+    }
   }
   if (fields.sourceId !== undefined)
     patch.sourceId = fields.sourceId ? String(fields.sourceId) : null;
@@ -293,10 +327,6 @@ export async function updateSession(session, fields, athlete) {
       if (cleaned.problem) throw new Error(cleaned.problem);
       patch.bests = cleaned.bests;
     }
-  }
-  if (load) {
-    patch.load = load.value;
-    patch.loadSource = load.source;
   }
   await updateDoc(doc(db, "sessions", session.id), patch);
 }
@@ -457,6 +487,48 @@ export function useCoachReads(max = 500) {
     );
     return unsub;
   }, [max]);
+  return { reads };
+}
+
+/**
+ * Read receipts for a specific set of Corner posts (Casey, Nov 4, 2026).
+ * The old useCoachReads fetched the whole coachReads collection with an
+ * unordered limit(500) — once the league passed 500 receipts (533 and
+ * counting; bots ack every post they fetch), an arbitrary slice of
+ * receipts silently vanished from the app: posts Casey had seen showed
+ * phantom "● N new" badges and 👀 Seen-by lines disappeared, mostly on
+ * older posts. This hook subscribes only to receipts for the posts
+ * actually loaded (batched `in` queries, 30 ids per chunk), so every
+ * displayed post always has its full receipt set.
+ */
+export function useCoachReadsForPosts(postIds) {
+  const [reads, setReads] = useState([]);
+  const key = [...new Set(postIds || [])].sort().join(",");
+  useEffect(() => {
+    if (!isConfigured || !key) {
+      setReads([]);
+      return;
+    }
+    const ids = key.split(",");
+    const chunks = [];
+    for (let i = 0; i < ids.length; i += 30) chunks.push(ids.slice(i, i + 30));
+    const byId = new Map();
+    const unsubs = chunks.map((chunk) => {
+      const q = query(
+        collection(db, "coachReads"),
+        where("postId", "in", chunk)
+      );
+      return onSnapshot(
+        q,
+        (snap) => {
+          for (const d of snap.docs) byId.set(d.id, { id: d.id, ...d.data() });
+          setReads([...byId.values()]);
+        },
+        () => {}
+      );
+    });
+    return () => unsubs.forEach((u) => u());
+  }, [key]);
   return { reads };
 }
 
