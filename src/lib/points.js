@@ -290,9 +290,34 @@ export function quarterlyStandings(sessions, athletes, asOf = todayStr()) {
  * Trophy winners for every COMPLETED Mon–Sun week (newest first).
  * A week counts when its Monday is before the current week's Monday and the
  * top score is > 0. Ties share the trophy.
- * Returns [{ weekStart, weekEnd, points, winners: [athlete, ...] }].
+ * Returns [{ weekStart, weekEnd, points, winners: [athlete, ...],
+ *            asteriskByWinner: { athleteId: true } }].
+ *
+ * The asterisk (Casey, Nov 4, 2026 — league culture, codified): a win is
+ * asterisked when a session of the winner's, dated inside the winning
+ * week, was flagged by SOMEONE ELSE (flaggedByUid ≠ the winner). It is
+ * the league's running joke — "they won, but did they really win" — and
+ * it is retroactive by nature: a flag raised later still asterisks the
+ * week. Self-flags never asterisk; flagging your own session is honour,
+ * not fish. A win with no asterisk is a CLEAN win — extra respect.
+ * Pass `flags` (the review-flags list) to compute it; without flags,
+ * every win reads clean.
  */
-export function weeklyWinners(sessions, athletes, asOf = todayStr()) {
+/**
+ * Whether winner `winnerId`'s win in the week [weekStart, weekEnd] is
+ * asterisked: a session of theirs inside the week was flagged by someone
+ * else (flaggedByUid ≠ winner). Self-flags never asterisk.
+ */
+function weekAsterisk(flags, sessionById, winnerId, weekStart, weekEnd) {
+  return (flags || []).some((f) => {
+    if (f.flaggedByUid === winnerId) return false; // self-flag = honour
+    if (f.sessionAthleteId !== winnerId) return false;
+    const s = sessionById.get(f.sessionId);
+    return s && s.date >= weekStart && s.date <= weekEnd;
+  });
+}
+
+export function weeklyWinners(sessions, athletes, asOf = todayStr(), flags = []) {
   if (!sessions || sessions.length === 0) return [];
   const currentMonday = mondayOf(asOf);
   let firstMonday = null;
@@ -300,20 +325,221 @@ export function weeklyWinners(sessions, athletes, asOf = todayStr()) {
     const m = mondayOf(s.date);
     if (firstMonday === null || m < firstMonday) firstMonday = m;
   }
+  const sessionById = new Map(sessions.map((s) => [s.id, s]));
   const out = [];
   for (let wk = firstMonday; wk < currentMonday; wk = addDays(wk, 7)) {
     const rows = weeklyStandings(sessions, athletes, wk);
     const top = rows[0];
     if (top && top.points > 0) {
+      const winners = rows.filter((r) => r.points === top.points).map((r) => r.athlete);
+      const weekEnd = addDays(wk, 6);
+      const asteriskByWinner = {};
+      for (const w of winners) {
+        asteriskByWinner[w.id] = weekAsterisk(flags, sessionById, w.id, wk, weekEnd);
+      }
       out.push({
         weekStart: wk,
-        weekEnd: addDays(wk, 6),
+        weekEnd,
         points: top.points,
-        winners: rows.filter((r) => r.points === top.points).map((r) => r.athlete),
+        winners,
+        asteriskByWinner,
       });
     }
   }
   return out.sort((a, b) => (a.weekStart < b.weekStart ? 1 : -1));
+}
+
+/* ---------------- the Throne (Casey, Nov 15, 2026) ---------------- */
+
+/**
+ * The Throne: the winner of each completed Mon–Sun week holds it, and
+ * consecutive weekly wins build a REIGN. A reigning holder pays a
+ * DYNASTY TAX on their weekly-race points — and only there: session
+ * points, the rolling board and the season race are never taxed.
+ *
+ * The tax is charged by reign week — the week being contested counts.
+ * A holder who has won L straight weeks enters the next week defending
+ * reign week L+1, and that week's race points are multiplied by:
+ *   reign week 1 ×1.00 · week 2 ×0.95 · week 3 ×0.90 · week 4 ×0.85 ·
+ *   week 5+ ×0.80 (floor).
+ * (Reign week 1 is the crowning week itself: nobody is taxed before
+ * they hold the throne, so a reign always starts untaxed.)
+ *
+ * Weekly winners ARE decided on taxed points: throneHistory walks the
+ * completed weeks chronologically, taxing each week's defending holder
+ * before calling its winner. In the league's pre-Throne history no
+ * athlete had ever won back-to-back weeks, so the taxed chain and the
+ * raw record (weeklyWinners) name the same winners for every past
+ * week — history stands untouched, and from here the tax has teeth.
+ * Ties share the week (as with trophies): each tied winner's reign
+ * grows, everyone else's resets. A week nobody scores in breaks all
+ * reigns — the throne is held by winning weeks, not by default.
+ *
+ * Titles by reign length (completed weeks won in a row):
+ *   1 "The New King" · 2 "The Undisputed" · 3 "The Dynasty" ·
+ *   4+ "The Legend".
+ */
+export const THRONE_TITLES = [
+  "The New King",
+  "The Undisputed",
+  "The Dynasty",
+  "The Legend",
+];
+
+/** Dynasty tax factor for a given reign week (1-based). */
+export function throneTaxForReignWeek(reignWeek) {
+  const w = Number(reignWeek) || 1;
+  if (w <= 1) return 1.0;
+  if (w === 2) return 0.95;
+  if (w === 3) return 0.9;
+  if (w === 4) return 0.85;
+  return 0.8;
+}
+
+/** Throne title for a reign of `reignWeeks` completed weeks (0 → null). */
+export function throneTitleForReign(reignWeeks) {
+  const n = Number(reignWeeks) || 0;
+  if (n <= 0) return null;
+  return THRONE_TITLES[Math.min(n, THRONE_TITLES.length) - 1];
+}
+
+/**
+ * The taxed chain over every COMPLETED week, newest first:
+ * [{ weekStart, weekEnd, winners, rawPoints, taxedPoints,
+ *    asteriskByWinner, reignByWinner }]
+ * rawPoints is the winners' untaxed score; taxedPoints is the score
+ * that actually won the week (the holder's tax applied). reignByWinner
+ * maps each winner's id to their reign length after that week.
+ */
+export function throneHistory(sessions, athletes, asOf = todayStr(), flags = []) {
+  if (!sessions || sessions.length === 0) return [];
+  const currentMonday = mondayOf(asOf);
+  let firstMonday = null;
+  for (const s of sessions) {
+    const m = mondayOf(s.date);
+    if (firstMonday === null || m < firstMonday) firstMonday = m;
+  }
+  const sessionById = new Map(sessions.map((s) => [s.id, s]));
+  const counts = {}; // athleteId -> consecutive weekly wins entering the week
+  const out = [];
+  for (let wk = firstMonday; wk < currentMonday; wk = addDays(wk, 7)) {
+    const rows = weeklyStandings(sessions, athletes, wk);
+    const taxed = rows.map((r) => {
+      const reign = counts[r.athlete.id] || 0;
+      const factor = reign > 0 ? throneTaxForReignWeek(reign + 1) : 1.0;
+      return { athlete: r.athlete, raw: r.points, taxed: round1(r.points * factor) };
+    });
+    taxed.sort((a, b) => b.taxed - a.taxed);
+    const top = taxed[0];
+    if (!top || top.taxed <= 0) {
+      for (const a of athletes) counts[a.id] = 0;
+      continue;
+    }
+    const winners = taxed.filter((t) => t.taxed === top.taxed);
+    const winnerIds = new Set(winners.map((w) => w.athlete.id));
+    for (const a of athletes)
+      counts[a.id] = winnerIds.has(a.id) ? (counts[a.id] || 0) + 1 : 0;
+    const weekEnd = addDays(wk, 6);
+    const asteriskByWinner = {};
+    const reignByWinner = {};
+    for (const w of winners) {
+      asteriskByWinner[w.athlete.id] = weekAsterisk(
+        flags, sessionById, w.athlete.id, wk, weekEnd
+      );
+      reignByWinner[w.athlete.id] = counts[w.athlete.id];
+    }
+    out.push({
+      weekStart: wk,
+      weekEnd,
+      winners: winners.map((w) => w.athlete),
+      rawPoints: top.raw,
+      taxedPoints: top.taxed,
+      asteriskByWinner,
+      reignByWinner,
+    });
+  }
+  return out.sort((a, b) => (a.weekStart < b.weekStart ? 1 : -1));
+}
+
+/**
+ * Who holds the Throne right now (the winners of the most recent
+ * completed week), or null when no week has completed with a winner.
+ * Each holder: { athlete, reignWeeks, title, defenseWeek, taxFactor } —
+ * defenseWeek / taxFactor describe the CURRENT in-progress week: the
+ * holder is defending reign week reignWeeks+1, and their race points
+ * this week are multiplied by taxFactor.
+ */
+export function currentThrone(sessions, athletes, asOf = todayStr(), flags = []) {
+  const history = throneHistory(sessions, athletes, asOf, flags);
+  if (history.length === 0) return null;
+  const latest = history[0];
+  const holders = latest.winners.map((a) => {
+    const reignWeeks = latest.reignByWinner[a.id] || 1;
+    const defenseWeek = reignWeeks + 1;
+    return {
+      athlete: a,
+      reignWeeks,
+      title: throneTitleForReign(reignWeeks),
+      defenseWeek,
+      taxFactor: throneTaxForReignWeek(defenseWeek),
+    };
+  });
+  return { holders, weekStart: latest.weekStart, history };
+}
+
+/**
+ * Every reign in league history, newest first — the Hall of Kings.
+ * A reign is one athlete's run of consecutive weekly wins:
+ * [{ athlete, weeks, fromWeek, toWeek, title, current }].
+ * `current` marks the reign still being defended this week.
+ */
+export function hallOfKings(sessions, athletes, asOf = todayStr(), flags = []) {
+  const history = throneHistory(sessions, athletes, asOf, flags).slice().reverse();
+  const reigns = [];
+  const open = {}; // athleteId -> reign segment in progress
+  for (const wk of history) {
+    const winnerIds = new Set(wk.winners.map((a) => a.id));
+    for (const a of athletes) {
+      if (winnerIds.has(a.id)) {
+        if (!open[a.id])
+          open[a.id] = { athlete: a, weeks: 0, fromWeek: wk.weekStart, toWeek: wk.weekStart };
+        open[a.id].weeks += 1;
+        open[a.id].toWeek = wk.weekStart;
+      } else if (open[a.id]) {
+        reigns.push(open[a.id]);
+        delete open[a.id];
+      }
+    }
+  }
+  for (const a of athletes) if (open[a.id]) reigns.push(open[a.id]);
+  const currentIds = new Set(
+    history.length ? history[history.length - 1].winners.map((a) => a.id) : []
+  );
+  return reigns
+    .map((r) => ({
+      ...r,
+      title: throneTitleForReign(r.weeks),
+      current: currentIds.has(r.athlete.id) && r.toWeek === history[history.length - 1]?.weekStart,
+    }))
+    .sort((a, b) => (a.toWeek < b.toWeek ? 1 : a.toWeek > b.toWeek ? -1 : b.weeks - a.weeks));
+}
+
+/**
+ * The current week's race standings with the dynasty tax applied to the
+ * reigning holder(s): rows carry the taxed `points` (ranked on it),
+ * plus `rawPoints` and `taxFactor` so the UI can show the tax openly.
+ * Non-holders pass through at ×1.00.
+ */
+export function taxedWeeklyStandings(sessions, athletes, weekStartStr, throne) {
+  const rows = weeklyStandings(sessions, athletes, weekStartStr);
+  const factorById = {};
+  for (const h of throne?.holders || []) factorById[h.athlete.id] = h.taxFactor;
+  const taxed = rows.map((r) => {
+    const f = factorById[r.athlete.id] ?? 1.0;
+    return { ...r, rawPoints: r.points, taxFactor: f, points: round1(r.points * f) };
+  });
+  taxed.sort((x, y) => y.points - x.points);
+  return taxed.map((r, i) => ({ ...r, rank: i + 1 }));
 }
 
 /** All-time per-sport totals for one athlete: { sport: {points, sessions, minutes} }. */

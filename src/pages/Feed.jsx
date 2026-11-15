@@ -11,8 +11,11 @@ import {
   testHeadline,
   testDetailLines,
   bestsHeadline,
+  currentThrone,
+  todayStr,
 } from "../lib/points.js";
 import { useAuth } from "../App.jsx";
+import Avatar from "../components/Avatar.jsx";
 
 function RerateControl({ session, athlete }) {
   const [saving, setSaving] = useState(false);
@@ -338,7 +341,7 @@ function AthleteAdjustedTag({ session }) {
   return <span className="tag">athlete adjusted ↑ +{d} pts</span>;
 }
 
-function SessionCard({ session, athleteName, isMine, athlete, ownerAthlete, openFlags = [] }) {
+function SessionCard({ session, athleteName, isMine, athlete, ownerAthlete, openFlags = [], reign = 0 }) {
   const [open, setOpen] = useState(false);
   const meta = SPORT_META[session.sport] || { label: session.sport, icon: "🏅" };
   const needsReview = session.difficultyBy === "manual-default";
@@ -349,6 +352,7 @@ function SessionCard({ session, athleteName, isMine, athlete, ownerAthlete, open
     <div className="card session" onClick={() => setOpen((o) => !o)}>
       <div className="session-head">
         <div className="sport-ico">{meta.icon}</div>
+        <Avatar athlete={ownerAthlete} size={30} reign={reign} />
         <div className="grow">
           <div style={{ fontWeight: 700 }}>
             {athleteName} · {meta.label}
@@ -459,6 +463,9 @@ export default function Feed() {
   const loading = aLoading || sLoading;
   const names = Object.fromEntries(athletes.map((a) => [a.id, a.name]));
   const byId = Object.fromEntries(athletes.map((a) => [a.id, a]));
+  const reignById = {};
+  for (const h of currentThrone(sessions, athletes, todayStr(), flags)?.holders || [])
+    reignById[h.athlete.id] = h.reignWeeks;
 
   if (loading) {
     return (
@@ -493,6 +500,7 @@ export default function Feed() {
             isMine={athlete != null && s.athleteId === athlete.id}
             athlete={athlete}
             ownerAthlete={byId[s.athleteId]}
+            reign={reignById[s.athleteId] || 0}
             openFlags={flags.filter((f) => f.sessionId === s.id && !f.resolved)}
           />
         ))

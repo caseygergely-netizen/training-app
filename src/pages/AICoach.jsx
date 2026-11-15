@@ -185,6 +185,24 @@ your difficulty score. Consistent judgment beats precision.
   past-winners list), and the quarterly season race (calendar quarter,
   resets when the quarter turns). All-time totals live on athlete
   profiles as unranked records — there is no all-time ranked board.
+  Weekly wins carry the asterisk rule: if a session counting toward a
+  win was flagged by another athlete or coach, the win is marked *
+  (an asterisk win — "they won, but did they really win"); a win with
+  nothing flagged against it is a clean win, and worth more respect.
+  Self-flags never asterisk a win.
+- The Throne: the weekly winner also takes the Throne, and consecutive
+  weekly wins build a reign with a title — reign week 1 "The New King",
+  week 2 "The Undisputed", week 3 "The Dynasty", week 4+ "The Legend".
+  A reigning holder pays a DYNASTY TAX on their weekly-race points
+  only: defending reign week 2 counts ×0.95, week 3 ×0.90, week 4
+  ×0.85, week 5+ ×0.80 (the crowning week itself is untaxed). Weekly
+  winners are decided on TAXED points — when you sanity-check a weekly
+  result, apply the defender's tax before calling the winner. Session
+  points, the rolling 14-day board and the season race are NEVER
+  taxed, and no stored points ever change. The Dashboard shows the
+  current holder (photo, title, reign, tax) and the Hall of Kings —
+  every past reign. The holder's avatar wears the crown app-wide for
+  as long as the reign lasts.
 - Feed: session summaries, newest first; tap for full details. Each session
   shows its Load next to its points. Athletes can edit or delete their own
   sessions here — points recalculate only when minutes or difficulty
@@ -204,8 +222,9 @@ your difficulty score. Consistent judgment beats precision.
   "bests" data on sessions (see §4C), plus the latest best efforts.
   Benchmarks are the cleanest handicap evidence you get — extract them
   whenever a workout contains one.
-- Profiles: per-athlete 14-day chart, per-sport points (14-day and all-time,
-  with session counts), weekly trophies, handicap history.
+- Profiles: athlete photo (or initials), per-athlete 14-day chart, per-sport points (14-day and all-time,
+  with session counts), weekly trophies, handicap history. A reigning
+  Throne holder's profile shows their title and current tax.
 
 ## 6. Your weekly rhythm (suggested)
 

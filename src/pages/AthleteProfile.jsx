@@ -13,6 +13,7 @@ import {
 import {
   useAthletes,
   useSessions,
+  useReviewFlags,
   updateHandicap,
   updateAthleteSettings,
 } from "../lib/firestore.js";
@@ -24,10 +25,12 @@ import {
   prettyDate,
   pointsBySport,
   weeklyWinners,
+  currentThrone,
   SPORTS,
   SPORT_META,
   round1,
 } from "../lib/points.js";
+import Avatar from "../components/Avatar.jsx";
 import { useEffect, useState } from "react";
 
 const PIE_COLORS = ["#7cc4ff", "#8ce99a", "#b197fc", "#ffb35c", "#66d9e8"];
@@ -36,6 +39,7 @@ export default function AthleteProfile() {
   const { id } = useParams();
   const { athletes, loading: aLoading } = useAthletes();
   const { sessions, loading: sLoading } = useSessions();
+  const { flags } = useReviewFlags();
   const { athlete: me } = useAuth();
   const [hcpValue, setHcpValue] = useState("");
   const [hcpReason, setHcpReason] = useState("");
@@ -103,9 +107,12 @@ export default function AthleteProfile() {
     .sort((a, b) => b.value - a.value);
 
   const allTimeBySport = pointsBySport(sessions, id);
-  const trophies = weeklyWinners(sessions, athletes).filter((w) =>
-    w.winners.some((a) => a.id === id)
+  const trophies = weeklyWinners(sessions, athletes, undefined, flags).filter(
+    (w) => w.winners.some((a) => a.id === id)
   );
+  const throneNow = currentThrone(sessions, athletes, asOf, flags);
+  const myReign =
+    throneNow?.holders.find((h) => h.athlete.id === id) || null;
 
   const history = [...(athlete.handicapHistory || [])].sort((a, b) =>
     a.effectiveFrom < b.effectiveFrom ? 1 : -1
@@ -168,11 +175,23 @@ export default function AthleteProfile() {
 
   return (
     <div className="page">
-      <h1>👤 {athlete.name}</h1>
-      <p className="sub">
-        {(athlete.sports || []).map((s) => SPORT_META[s]?.icon).join(" ")} · handicap ×
-        {Number(athlete.handicap ?? 1).toFixed(2)}
-      </p>
+      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+        <Avatar athlete={athlete} size={58} reign={myReign?.reignWeeks || 0} />
+        <div>
+          <h1 style={{ margin: 0 }}>{athlete.name}</h1>
+          <p className="sub" style={{ margin: 0 }}>
+            {(athlete.sports || []).map((s) => SPORT_META[s]?.icon).join(" ")} · handicap ×
+            {Number(athlete.handicap ?? 1).toFixed(2)}
+          </p>
+        </div>
+      </div>
+      {myReign && (
+        <p className="sub" style={{ color: "#f2c14e", fontWeight: 700 }}>
+          👑 On the Throne — {myReign.title} · reign of {myReign.reignWeeks}{" "}
+          week{myReign.reignWeeks === 1 ? "" : "s"} · defending this week at
+          ×{myReign.taxFactor.toFixed(2)}
+        </p>
+      )}
 
       <div className="badges" style={{ marginBottom: 12 }}>
         <div className="badge">
@@ -197,17 +216,25 @@ export default function AthleteProfile() {
             race when the week closes Sunday night.
           </p>
         ) : (
-          trophies.slice(0, 12).map((w) => (
-            <div className="hist-row" key={w.weekStart}>
-              <div>
-                🏆 Week of {prettyDate(w.weekStart)}
-                <div className="small muted">
-                  {w.winners.length > 1 ? "Shared win · " : ""}won with {w.points} pts
+          trophies.slice(0, 12).map((w) => {
+            const asterisked = !!w.asteriskByWinner?.[id];
+            return (
+              <div className="hist-row" key={w.weekStart}>
+                <div>
+                  🏆 Week of {prettyDate(w.weekStart)}
+                  {asterisked ? " *" : ""}
+                  <div className="small muted">
+                    {w.winners.length > 1 ? "Shared win · " : ""}won with{" "}
+                    {w.points} pts
+                    {asterisked
+                      ? " · * a session that week was flagged — an asterisk win"
+                      : " · clean win ✨"}
+                  </div>
                 </div>
+                <div style={{ fontSize: 18 }}>🏆</div>
               </div>
-              <div style={{ fontSize: 18 }}>🏆</div>
-            </div>
-          ))
+            );
+          })
         )}
         {trophies.length > 12 && (
           <p className="small muted">…and {trophies.length - 12} earlier wins.</p>

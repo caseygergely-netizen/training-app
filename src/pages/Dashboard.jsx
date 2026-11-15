@@ -1,14 +1,16 @@
 import { Link } from "react-router-dom";
-import { useAthletes, useSessions, seedDemoData, clearDemoData } from "../lib/firestore.js";
+import { useAthletes, useSessions, useReviewFlags, seedDemoData, clearDemoData } from "../lib/firestore.js";
 import { useAuth } from "../App.jsx";
 import Onboarding from "./Onboarding.jsx";
 import {
   rolling14Day,
   dailyPoints,
   hypeBadges,
-  weeklyStandings,
   weeklyWinners,
   quarterlyStandings,
+  currentThrone,
+  hallOfKings,
+  taxedWeeklyStandings,
   mondayOf,
   addDays,
   todayStr,
@@ -17,6 +19,7 @@ import {
 } from "../lib/points.js";
 import Sparkline from "../components/Sparkline.jsx";
 import RaceLane, { LANE_COLORS } from "../components/RaceLane.jsx";
+import Avatar from "../components/Avatar.jsx";
 import { useState } from "react";
 
 function TrendArrow({ delta, prior }) {
@@ -35,6 +38,7 @@ function athleteName(athletes, id) {
 export default function Dashboard() {
   const { athletes, loading: aLoading } = useAthletes();
   const { sessions, loading: sLoading } = useSessions();
+  const { flags } = useReviewFlags();
   const { athlete } = useAuth();
   const [seeding, setSeeding] = useState(false);
   const [seedError, setSeedError] = useState("");
@@ -47,8 +51,13 @@ export default function Dashboard() {
   // weekly 7-day race (past winners listed below the races) and the
   // quarterly season race. All-time totals stay on athlete profiles as
   // unranked records — never a ranked board.
-  const weekRows = weeklyStandings(sessions, athletes, mondayOf(asOf));
-  const pastWinners = weeklyWinners(sessions, athletes, asOf);
+  const weekStart = mondayOf(asOf);
+  const throne = currentThrone(sessions, athletes, asOf, flags);
+  const hall = hallOfKings(sessions, athletes, asOf, flags);
+  const weekRows = taxedWeeklyStandings(sessions, athletes, weekStart, throne);
+  const reignById = {};
+  for (const h of throne?.holders || []) reignById[h.athlete.id] = h.reignWeeks;
+  const pastWinners = weeklyWinners(sessions, athletes, asOf, flags);
   const { quarter, rows: quarterRows } = quarterlyStandings(sessions, athletes, asOf);
   const badges = hypeBadges(sessions, athletes, asOf);
   const hasDemo =
@@ -162,6 +171,11 @@ export default function Dashboard() {
                   <div className={`rank r${row.rank <= 3 ? row.rank : 0}`}>
                     {row.rank}
                   </div>
+                  <Avatar
+                    athlete={row.athlete}
+                    size={34}
+                    reign={reignById[row.athlete.id] || 0}
+                  />
                   <div className="grow">
                     <div className="ath-name">{row.athlete.name}</div>
                     <div className="small muted">
@@ -178,6 +192,71 @@ export default function Dashboard() {
             })}
           </div>
 
+          <h1 style={{ fontSize: 18, marginTop: 18 }}>👑 The Throne</h1>
+          <div className="card throne-card" style={{ marginTop: 8 }}>
+            {throne ? (
+              <>
+                {throne.holders.map((h) => (
+                  <div className="throne-holder" key={h.athlete.id}>
+                    <Avatar athlete={h.athlete} size={84} reign={h.reignWeeks} />
+                    <div>
+                      <div className="throne-name">{h.athlete.name}</div>
+                      <div className="throne-title">
+                        {h.title} · reign of {h.reignWeeks} week
+                        {h.reignWeeks === 1 ? "" : "s"}
+                      </div>
+                      <div className="small muted" style={{ marginTop: 4 }}>
+                        Won the week of {prettyDate(throne.weekStart)} — and
+                        defends the throne this week at{" "}
+                        <strong>×{h.taxFactor.toFixed(2)}</strong> (dynasty
+                        tax on weekly-race points only).
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </>
+            ) : (
+              <p className="small muted" style={{ margin: 6 }}>
+                The throne sits empty. Win a weekly race to take it — then
+                defend it, if you can.
+              </p>
+            )}
+            <p className="small muted" style={{ marginTop: 10 }}>
+              Consecutive weekly wins build a reign — and a dynasty tax:
+              reign week 2 ×0.95 · week 3 ×0.90 · week 4 ×0.85 · week 5+
+              ×0.80, charged on the holder's weekly-race points only.
+              Session points are never taxed. Titles: The New King → The
+              Undisputed → The Dynasty → The Legend.
+            </p>
+            {hall.length > 0 && (
+              <>
+                <h3 style={{ marginTop: 12 }}>🏛️ Hall of Kings</h3>
+                <div className="hall">
+                  {hall.map((r) => (
+                    <div
+                      className={`hall-king${r.current ? " current" : ""}`}
+                      key={`${r.athlete.id}-${r.fromWeek}`}
+                    >
+                      <Avatar
+                        athlete={r.athlete}
+                        size={44}
+                        reign={r.current ? r.weeks : 0}
+                      />
+                      <div className="hk-name">{r.athlete.name}</div>
+                      <div className="hk-meta">
+                        {r.weeks}-week reign
+                        <br />
+                        {r.title}
+                        <br />
+                        {r.current ? "👑 reigning" : prettyDate(r.fromWeek)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
           <h1 style={{ fontSize: 18, marginTop: 18 }}>🏁 This week's race</h1>
           <div className="card race-card" style={{ marginTop: 8 }}>
             {weekRows.map((row, i) => (
@@ -186,11 +265,18 @@ export default function Dashboard() {
                 row={row}
                 topPoints={weekRows.length > 0 ? weekRows[0].points : 0}
                 color={LANE_COLORS[i % LANE_COLORS.length]}
+                reign={reignById[row.athlete.id] || 0}
               />
             ))}
             <p className="small muted" style={{ marginTop: 6 }}>
               Week of {prettyDate(mondayOf(asOf))} → {prettyDate(addDays(mondayOf(asOf), 6))} ·
-              winner takes the trophy 🏆 — past winners below.
+              winner takes the trophy 🏆 — and the Throne 👑
+              {throne
+                ? ` — ${throne.holders.map((h) => h.athlete.name).join(" & ")} defend${
+                    throne.holders.length === 1 ? "s" : ""
+                  } it at ×${throne.holders[0].taxFactor.toFixed(2)}`
+                : ""}{" "}
+              — past winners below.
             </p>
           </div>
 
@@ -202,6 +288,7 @@ export default function Dashboard() {
                 row={row}
                 topPoints={quarterRows.length > 0 ? quarterRows[0].points : 0}
                 color={LANE_COLORS[i % LANE_COLORS.length]}
+                reign={reignById[row.athlete.id] || 0}
               />
             ))}
             <p className="small muted" style={{ marginTop: 6 }}>
@@ -219,18 +306,35 @@ export default function Dashboard() {
                 week closes Sunday night.
               </p>
             ) : (
-              pastWinners.slice(0, 8).map((w) => (
-                <div className="hist-row" key={w.weekStart}>
-                  <div>
-                    🏆 Week of {prettyDate(w.weekStart)}
-                    <div className="small muted">
-                      {w.winners.map((a) => a.name).join(" & ")} won with{" "}
-                      {w.points} pts
+              pastWinners.slice(0, 8).map((w) => {
+                const anyAsterisk = w.winners.some(
+                  (a) => w.asteriskByWinner?.[a.id]
+                );
+                return (
+                  <div className="hist-row" key={w.weekStart}>
+                    <div>
+                      🏆 Week of {prettyDate(w.weekStart)}
+                      <div className="small muted">
+                        {w.winners
+                          .map(
+                            (a) =>
+                              a.name + (w.asteriskByWinner?.[a.id] ? " *" : "")
+                          )
+                          .join(" & ")}{" "}
+                        won with {w.points} pts
+                        {!anyAsterisk ? " · clean win ✨" : ""}
+                      </div>
+                      {anyAsterisk && (
+                        <div className="small muted">
+                          * a session counting toward that win was flagged —
+                          they won, but did they really win?
+                        </div>
+                      )}
                     </div>
+                    <div style={{ fontSize: 18 }}>🏆</div>
                   </div>
-                  <div style={{ fontSize: 18 }}>🏆</div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
 

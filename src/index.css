@@ -323,3 +323,69 @@ pre.code {
 @media (prefers-reduced-motion: reduce) {
   .race-fill, .race-avatar { transition: none; }
 }
+
+/* ---------- athlete avatars + the Throne ---------- */
+.race-avatar img {
+  width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block;
+}
+.race-avatar .avatar-crown {
+  position: absolute; top: -13px; right: -7px; z-index: 3;
+  transform: rotate(18deg); line-height: 1;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.55));
+}
+.race-avatar.frame-1 { border-color: #b0793f; box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5), 0 0 0 3px rgba(176, 121, 63, 0.55), 0 0 12px rgba(176, 121, 63, 0.4); }
+.race-avatar.frame-2 { border-color: #d9a441; box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5), 0 0 0 3px rgba(217, 164, 65, 0.6), 0 0 16px rgba(217, 164, 65, 0.5); }
+.race-avatar.frame-3 { border-color: #f2c14e; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.55), 0 0 0 3px rgba(242, 193, 78, 0.75), 0 0 22px rgba(242, 193, 78, 0.65); }
+.race-avatar.frame-4 { border-color: #ffe27a; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.55), 0 0 0 3px rgba(255, 226, 122, 0.9), 0 0 28px rgba(255, 210, 63, 0.85); }
+.avatar {
+  position: relative; display: inline-block; flex-shrink: 0;
+  border-radius: 50%; vertical-align: middle;
+}
+.avatar-face {
+  display: flex; align-items: center; justify-content: center;
+  width: 100%; height: 100%; border-radius: 50%; overflow: hidden;
+  background: linear-gradient(145deg, #2a3448, #171e2c);
+  border: 2px solid rgba(255, 255, 255, 0.22);
+}
+.avatar-face img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.avatar-initials { font-weight: 800; color: #dfe7f2; letter-spacing: 0.02em; }
+.avatar-crown {
+  position: absolute; top: -0.42em; right: -0.3em; z-index: 3;
+  transform: rotate(18deg); line-height: 1; pointer-events: none;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.55));
+}
+/* Reign frames: bronze → gold → bright gold → radiant (The Legend). */
+.avatar.frame-1 .avatar-face { border-color: #b0793f; box-shadow: 0 0 0 2px rgba(176, 121, 63, 0.55), 0 0 8px rgba(176, 121, 63, 0.35); }
+.avatar.frame-2 .avatar-face { border-color: #d9a441; box-shadow: 0 0 0 2px rgba(217, 164, 65, 0.6), 0 0 12px rgba(217, 164, 65, 0.45); }
+.avatar.frame-3 .avatar-face { border-color: #f2c14e; box-shadow: 0 0 0 2px rgba(242, 193, 78, 0.75), 0 0 18px rgba(242, 193, 78, 0.6); }
+.avatar.frame-4 .avatar-face {
+  border-color: #ffe27a;
+  box-shadow: 0 0 0 2px rgba(255, 226, 122, 0.9), 0 0 26px rgba(255, 210, 63, 0.85), 0 0 46px rgba(255, 170, 40, 0.4);
+  animation: throne-glow 2.6s ease-in-out infinite;
+}
+@keyframes throne-glow {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(255, 226, 122, 0.9), 0 0 22px rgba(255, 210, 63, 0.75), 0 0 40px rgba(255, 170, 40, 0.35); }
+  50% { box-shadow: 0 0 0 2px rgba(255, 236, 160, 1), 0 0 32px rgba(255, 216, 90, 0.95), 0 0 56px rgba(255, 180, 50, 0.5); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .avatar.frame-4 .avatar-face { animation: none; }
+}
+.throne-card {
+  border-color: #4a3a14;
+  background:
+    radial-gradient(120% 160% at 85% 0%, rgba(255, 205, 80, 0.13) 0%, rgba(255, 205, 80, 0) 55%),
+    linear-gradient(180deg, #1d1a10, var(--card));
+}
+.throne-holder { display: flex; align-items: center; gap: 16px; }
+.throne-name { font-size: 22px; font-weight: 800; line-height: 1.15; }
+.throne-title { color: #f2c14e; font-weight: 700; font-size: 14.5px; margin-top: 2px; }
+.hall { display: flex; gap: 10px; overflow-x: auto; padding: 4px 2px 8px; }
+.hall-king {
+  flex: 0 0 auto; width: 118px; text-align: center;
+  background: var(--bg-soft); border: 1px solid var(--card-edge);
+  border-radius: 12px; padding: 10px 8px 8px;
+}
+.hall-king.current { border-color: #4a3a14; background: linear-gradient(180deg, #221d10, var(--bg-soft)); }
+.hall-king .hk-name { font-size: 12.5px; font-weight: 700; margin-top: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hall-king .hk-meta { font-size: 11px; color: var(--muted); margin-top: 2px; line-height: 1.45; }
+
