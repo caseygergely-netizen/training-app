@@ -525,6 +525,88 @@ export function hallOfKings(sessions, athletes, asOf = todayStr(), flags = []) {
 }
 
 /**
+ * The Monday-morning recap of the most recently COMPLETED week
+ * (Casey, Nov 16, 2026): who took the Throne and at what score, the
+ * final standings, the week's biggest session, PBs set, flags raised,
+ * and who defends the crown this week at what tax. Winners / reign /
+ * asterisk come from the throne chain itself, so the recap can never
+ * disagree with the Throne card. Null when no week has completed.
+ */
+export function weeklyRecap(sessions, athletes, asOf = todayStr(), flags = []) {
+  const history = throneHistory(sessions, athletes, asOf, flags);
+  if (history.length === 0) return null;
+  const latest = history[0];
+  const { weekStart, weekEnd } = latest;
+  const athleteById = new Map((athletes || []).map((a) => [a.id, a]));
+  const winnerIds = new Set(latest.winners.map((a) => a.id));
+  const standings = weeklyStandings(sessions, athletes, weekStart)
+    .map((r) => ({
+      athlete: r.athlete,
+      points: r.points,
+      sessions: r.sessions,
+      isWinner: winnerIds.has(r.athlete.id),
+    }))
+    .sort((a, b) => b.isWinner - a.isWinner || b.points - a.points);
+  const inWeek = (sessions || []).filter(
+    (s) => s.date >= weekStart && s.date <= weekEnd
+  );
+  let biggest = null;
+  for (const s of inWeek) {
+    if (!biggest || (Number(s.points) || 0) > (Number(biggest.points) || 0))
+      biggest = s;
+  }
+  const pbs = [];
+  for (const s of inWeek) {
+    const headline = bestsHeadline(s);
+    if (headline) {
+      pbs.push({
+        athlete: athleteById.get(s.athleteId) || null,
+        headline,
+        date: s.date,
+      });
+    }
+  }
+  const sessionById = new Map((sessions || []).map((s) => [s.id, s]));
+  let flagsRaised = 0;
+  const flaggedIds = new Set();
+  for (const f of flags || []) {
+    const s = sessionById.get(f.sessionId);
+    if (s && s.date >= weekStart && s.date <= weekEnd) {
+      flagsRaised += 1;
+      if (f.sessionAthleteId) flaggedIds.add(f.sessionAthleteId);
+    }
+  }
+  const throne = currentThrone(sessions, athletes, asOf, flags);
+  return {
+    weekStart,
+    weekEnd,
+    winners: latest.winners.map((a) => ({
+      athlete: a,
+      reignWeeks: latest.reignByWinner[a.id] || 1,
+      title: throneTitleForReign(latest.reignByWinner[a.id] || 1),
+      asterisk: !!latest.asteriskByWinner[a.id],
+    })),
+    rawPoints: latest.rawPoints,
+    taxedPoints: latest.taxedPoints,
+    standings,
+    biggestSession: biggest
+      ? { session: biggest, athlete: athleteById.get(biggest.athleteId) || null }
+      : null,
+    pbs,
+    flagsRaised,
+    flaggedAthletes: [...flaggedIds]
+      .map((id) => athleteById.get(id))
+      .filter(Boolean),
+    defenders: (throne?.holders || []).map((h) => ({
+      athlete: h.athlete,
+      reignWeeks: h.reignWeeks,
+      title: h.title,
+      taxFactor: h.taxFactor,
+    })),
+  };
+}
+
+/**
  * The current week's race standings with the dynasty tax applied to the
  * reigning holder(s): rows carry the taxed `points` (ranked on it),
  * plus `rawPoints` and `taxFactor` so the UI can show the tax openly.

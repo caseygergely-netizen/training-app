@@ -31,6 +31,7 @@ import {
   round1,
 } from "../lib/points.js";
 import Avatar from "../components/Avatar.jsx";
+import Statue from "../components/Statue.jsx";
 import { useEffect, useState } from "react";
 
 const PIE_COLORS = ["#7cc4ff", "#8ce99a", "#b197fc", "#ffb35c", "#66d9e8"];
@@ -186,11 +187,16 @@ export default function AthleteProfile() {
         </div>
       </div>
       {myReign && (
-        <p className="sub" style={{ color: "#f2c14e", fontWeight: 700 }}>
-          👑 On the Throne — {myReign.title} · reign of {myReign.reignWeeks}{" "}
-          week{myReign.reignWeeks === 1 ? "" : "s"} · defending this week at
-          ×{myReign.taxFactor.toFixed(2)}
-        </p>
+        <>
+          <p className="sub" style={{ color: "#f2c14e", fontWeight: 700 }}>
+            👑 On the Throne — {myReign.title} · reign of {myReign.reignWeeks}{" "}
+            week{myReign.reignWeeks === 1 ? "" : "s"} · defending this week at
+            ×{myReign.taxFactor.toFixed(2)}
+          </p>
+          <div style={{ marginBottom: 12 }}>
+            <Statue athlete={athlete} reign={myReign.reignWeeks} variant="card" />
+          </div>
+        </>
       )}
 
       <div className="badges" style={{ marginBottom: 12 }}>

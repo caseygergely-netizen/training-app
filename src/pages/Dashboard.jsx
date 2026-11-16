@@ -10,6 +10,7 @@ import {
   quarterlyStandings,
   currentThrone,
   hallOfKings,
+  weeklyRecap,
   taxedWeeklyStandings,
   mondayOf,
   addDays,
@@ -20,7 +21,10 @@ import {
 import Sparkline from "../components/Sparkline.jsx";
 import RaceLane, { LANE_COLORS } from "../components/RaceLane.jsx";
 import Avatar from "../components/Avatar.jsx";
-import { useState } from "react";
+import Statue from "../components/Statue.jsx";
+import WeeklyRecap from "../components/WeeklyRecap.jsx";
+import { statueUrlFor } from "../lib/statues.js";
+import { Fragment, useState } from "react";
 
 function TrendArrow({ delta, prior }) {
   if (prior === 0 && delta === 0) return <span className="trend flat">—</span>;
@@ -43,6 +47,7 @@ export default function Dashboard() {
   const [seeding, setSeeding] = useState(false);
   const [seedError, setSeedError] = useState("");
   const [clearing, setClearing] = useState(false);
+  const [recapClosed, setRecapClosed] = useState(false);
 
   const loading = aLoading || sLoading;
   const asOf = todayStr();
@@ -58,6 +63,27 @@ export default function Dashboard() {
   const reignById = {};
   for (const h of throne?.holders || []) reignById[h.athlete.id] = h.reignWeeks;
   const pastWinners = weeklyWinners(sessions, athletes, asOf, flags);
+  // Monday-morning recap (Casey, Nov 16, 2026): the coronation for
+  // the week just closed, shown once per week per browser — the key
+  // is the recapped week's Monday, so a new week re-arms it.
+  const recap = weeklyRecap(sessions, athletes, asOf, flags);
+  const recapSeen = (() => {
+    if (!recap) return true;
+    try {
+      return localStorage.getItem(`fomo.recapSeen.${recap.weekStart}`) === "1";
+    } catch {
+      return false;
+    }
+  })();
+  const showRecap = !!recap && !recapSeen && !recapClosed;
+  function closeRecap() {
+    try {
+      if (recap) localStorage.setItem(`fomo.recapSeen.${recap.weekStart}`, "1");
+    } catch {
+      /* private mode — the in-state close still applies */
+    }
+    setRecapClosed(true);
+  }
   const { quarter, rows: quarterRows } = quarterlyStandings(sessions, athletes, asOf);
   const badges = hypeBadges(sessions, athletes, asOf);
   const hasDemo =
@@ -197,22 +223,25 @@ export default function Dashboard() {
             {throne ? (
               <>
                 {throne.holders.map((h) => (
-                  <div className="throne-holder" key={h.athlete.id}>
-                    <Avatar athlete={h.athlete} size={84} reign={h.reignWeeks} crownScale={1.05} />
-                    <div>
-                      <div className="throne-name">{h.athlete.name}</div>
-                      <div className="throne-title">
-                        {h.title} · reign of {h.reignWeeks} week
-                        {h.reignWeeks === 1 ? "" : "s"}
-                      </div>
-                      <div className="small muted" style={{ marginTop: 4 }}>
-                        Won the week of {prettyDate(throne.weekStart)} — and
-                        defends the throne this week at{" "}
-                        <strong>×{h.taxFactor.toFixed(2)}</strong> (dynasty
-                        tax on weekly-race points only).
+                  <Fragment key={h.athlete.id}>
+                    <div className="throne-holder">
+                      <Avatar athlete={h.athlete} size={84} reign={h.reignWeeks} crownScale={1.05} />
+                      <div>
+                        <div className="throne-name">{h.athlete.name}</div>
+                        <div className="throne-title">
+                          {h.title} · reign of {h.reignWeeks} week
+                          {h.reignWeeks === 1 ? "" : "s"}
+                        </div>
+                        <div className="small muted" style={{ marginTop: 4 }}>
+                          Won the week of {prettyDate(throne.weekStart)} — and
+                          defends the throne this week at{" "}
+                          <strong>×{h.taxFactor.toFixed(2)}</strong> (dynasty
+                          tax on weekly-race points only).
+                        </div>
                       </div>
                     </div>
-                  </div>
+                    <Statue athlete={h.athlete} reign={h.reignWeeks} variant="card" />
+                  </Fragment>
                 ))}
               </>
             ) : (
@@ -228,7 +257,9 @@ export default function Dashboard() {
               Session points are never taxed. Titles: The New King → The
               Undisputed → The Dynasty → The Legend. The holder's crown
               itself grows with the reign — more points, more jewels, more
-              regalia every week it survives.
+              regalia every week it survives. And the holder's statue
+              below escalates with it: bronze in week 1, silver in week
+              2, gold in week 3 — radiant beyond.
             </p>
             {hall.length > 0 && (
               <>
@@ -239,11 +270,15 @@ export default function Dashboard() {
                       className={`hall-king${r.current ? " current" : ""}`}
                       key={`${r.athlete.id}-${r.fromWeek}`}
                     >
-                      <Avatar
-                        athlete={r.athlete}
-                        size={44}
-                        reign={r.weeks}
-                      />
+                      {statueUrlFor(r.athlete) ? (
+                        <Statue athlete={r.athlete} reign={r.weeks} variant="hall" />
+                      ) : (
+                        <Avatar
+                          athlete={r.athlete}
+                          size={44}
+                          reign={r.weeks}
+                        />
+                      )}
                       <div className="hk-name">{r.athlete.name}</div>
                       <div className="hk-meta">
                         {r.weeks}-week reign
@@ -268,6 +303,7 @@ export default function Dashboard() {
                 topPoints={weekRows.length > 0 ? weekRows[0].points : 0}
                 color={LANE_COLORS[i % LANE_COLORS.length]}
                 reign={reignById[row.athlete.id] || 0}
+                boardId="weekly"
               />
             ))}
             <p className="small muted" style={{ marginTop: 6 }}>
@@ -291,6 +327,7 @@ export default function Dashboard() {
                 topPoints={quarterRows.length > 0 ? quarterRows[0].points : 0}
                 color={LANE_COLORS[i % LANE_COLORS.length]}
                 reign={reignById[row.athlete.id] || 0}
+                boardId="quarterly"
               />
             ))}
             <p className="small muted" style={{ marginTop: 6 }}>
@@ -399,6 +436,7 @@ export default function Dashboard() {
           </div>
         </>
       )}
+      {showRecap && <WeeklyRecap recap={recap} onClose={closeRecap} />}
     </div>
   );
 }
