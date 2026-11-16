@@ -198,7 +198,7 @@ export default function Dashboard() {
               <>
                 {throne.holders.map((h) => (
                   <div className="throne-holder" key={h.athlete.id}>
-                    <Avatar athlete={h.athlete} size={84} reign={h.reignWeeks} />
+                    <Avatar athlete={h.athlete} size={84} reign={h.reignWeeks} crownScale={1.05} />
                     <div>
                       <div className="throne-name">{h.athlete.name}</div>
                       <div className="throne-title">
@@ -226,7 +226,9 @@ export default function Dashboard() {
               reign week 2 ×0.95 · week 3 ×0.90 · week 4 ×0.85 · week 5+
               ×0.80, charged on the holder's weekly-race points only.
               Session points are never taxed. Titles: The New King → The
-              Undisputed → The Dynasty → The Legend.
+              Undisputed → The Dynasty → The Legend. The holder's crown
+              itself grows with the reign — more points, more jewels, more
+              regalia every week it survives.
             </p>
             {hall.length > 0 && (
               <>
@@ -240,7 +242,7 @@ export default function Dashboard() {
                       <Avatar
                         athlete={r.athlete}
                         size={44}
-                        reign={r.current ? r.weeks : 0}
+                        reign={r.weeks}
                       />
                       <div className="hk-name">{r.athlete.name}</div>
                       <div className="hk-meta">

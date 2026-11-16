@@ -329,7 +329,7 @@ pre.code {
   width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block;
 }
 .race-avatar .avatar-crown {
-  position: absolute; top: -13px; right: -7px; z-index: 3;
+  position: absolute; top: -36%; right: -20%; z-index: 3;
   transform: rotate(18deg); line-height: 1;
   filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.55));
 }
@@ -350,9 +350,39 @@ pre.code {
 .avatar-face img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .avatar-initials { font-weight: 800; color: #dfe7f2; letter-spacing: 0.02em; }
 .avatar-crown {
-  position: absolute; top: -0.42em; right: -0.3em; z-index: 3;
+  position: absolute; top: -30%; right: -22%; z-index: 3;
   transform: rotate(18deg); line-height: 1; pointer-events: none;
   filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.55));
+}
+/* The crown glyph itself escalates with the reign (CrownGlyph tiers):
+   jewels and regalia accrue weekly; Dynasty+ crowns glow, Legend+
+   sparkles shimmer, and a 5+ week reign adds a pulsing aura. */
+.crown-glyph { display: block; overflow: visible; }
+.crown-glyph.tier-3,
+.crown-glyph.tier-4,
+.crown-glyph.tier-5 {
+  filter: drop-shadow(0 0 5px rgba(255, 210, 63, 0.55));
+}
+.crown-sparkle {
+  transform-box: fill-box; transform-origin: center;
+  animation: crown-shimmer 2.2s ease-in-out infinite;
+}
+.crown-sparkle.s2 { animation-delay: 0.7s; }
+.crown-sparkle.s3 { animation-delay: 1.3s; }
+.crown-aura {
+  transform-box: fill-box; transform-origin: center;
+  animation: crown-pulse 2.8s ease-in-out infinite;
+}
+@keyframes crown-shimmer {
+  0%, 100% { opacity: 0.35; transform: scale(0.8) rotate(0deg); }
+  50% { opacity: 1; transform: scale(1.12) rotate(12deg); }
+}
+@keyframes crown-pulse {
+  0%, 100% { opacity: 0.2; }
+  50% { opacity: 0.5; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .crown-sparkle, .crown-aura { animation: none; }
 }
 /* Reign frames: bronze → gold → bright gold → radiant (The Legend). */
 .avatar.frame-1 .avatar-face { border-color: #b0793f; box-shadow: 0 0 0 2px rgba(176, 121, 63, 0.55), 0 0 8px rgba(176, 121, 63, 0.35); }

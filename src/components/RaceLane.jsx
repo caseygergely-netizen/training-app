@@ -1,5 +1,6 @@
 import { avatarUrlFor } from "../lib/avatars.js";
 import { initialsOf } from "./Avatar.jsx";
+import CrownGlyph from "./CrownGlyph.jsx";
 
 export const LANE_COLORS = [
   "#c6ff4a",
@@ -60,8 +61,8 @@ export default function RaceLane({ row, topPoints, color, reign = 0 }) {
             initialsOf(row.athlete.name)
           )}
           {frame > 0 && (
-            <span className="avatar-crown" style={{ fontSize: 21 }} aria-hidden="true">
-              👑
+            <span className="avatar-crown" aria-hidden="true">
+              <CrownGlyph tier={Math.min(reign, 5)} width={30} />
             </span>
           )}
         </div>
