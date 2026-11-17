@@ -6,10 +6,14 @@ import Statue from "./Statue.jsx";
  * per week on the first Dashboard open after the week rolls — the
  * coronation. The winner's statue (at the material their reign has
  * reached), the crown score, final standings, biggest session, PBs,
- * flags, and the tax the king defends at this week. Data comes from
- * weeklyRecap() in points.js; dismissal is the caller's business.
+ * flags, the tax the king defends at this week — plus the week's
+ * spoon result, any King's Bounty claimed, and any secret
+ * achievements unlocked that week (the System AI segment; unlocks are
+ * computed by the caller from lib/achievements.js and passed in).
+ * Data comes from weeklyRecap() in points.js; dismissal is the
+ * caller's business.
  */
-export default function WeeklyRecap({ recap, onClose }) {
+export default function WeeklyRecap({ recap, onClose, achievements = [] }) {
   if (!recap) return null;
   const winner = recap.winners[0];
   return (
@@ -91,6 +95,48 @@ export default function WeeklyRecap({ recap, onClose }) {
                   : ""
               }.`}
         </p>
+        {recap.spoon && recap.spoon.length > 0 && (
+          <p className="small" style={{ marginTop: 6 }}>
+            🥄 <strong>The Spoon:</strong>{" "}
+            {recap.spoon
+              .map(
+                (s) =>
+                  `${s.athlete.name} — ${s.title}, week ${s.streak} of the streak${
+                    s.streak >= 2
+                      ? " — the ×1.10 spoon boost is armed for this week"
+                      : ""
+                  }`
+              )
+              .join("; ")}
+            .
+          </p>
+        )}
+        {recap.bounty && recap.bounty.length > 0 && (
+          <div className="small" style={{ marginTop: 6 }}>
+            🎯 <strong>King's Bounty claimed:</strong>
+            {recap.bounty.map((b, i) => (
+              <div key={i} style={{ marginTop: 2 }}>
+                {b.athlete?.name || "Unknown"} — a {b.points}-pt session,
+                bigger than the sitting king's best ({b.kingBest} pts). The
+                crown took that personally.
+              </div>
+            ))}
+          </div>
+        )}
+        {achievements.length > 0 && (
+          <div style={{ marginTop: 12 }}>
+            <h3>🎉 New achievements!</h3>
+            {achievements.map(({ athlete, unlock }) => (
+              <div key={`${athlete.id}-${unlock.id}`} className="ach-unlock">
+                <div className="ach-unlock-head">
+                  {unlock.icon} {athlete.name} — “{unlock.title}”
+                </div>
+                <div className="small">{unlock.desc}</div>
+                <div className="small muted">Reward: {unlock.reward}</div>
+              </div>
+            ))}
+          </div>
+        )}
         {recap.defenders.length > 0 && (
           <p className="small" style={{ marginTop: 6 }}>
             🛡️ This week,{" "}

@@ -4,12 +4,15 @@ import { useAuth } from "../App.jsx";
 import Onboarding from "./Onboarding.jsx";
 import {
   rolling14Day,
-  dailyPoints,
+  rangeStandings,
   hypeBadges,
   weeklyWinners,
   quarterlyStandings,
   currentThrone,
   hallOfKings,
+  hallOfCellar,
+  currentSpoon,
+  throneGrip,
   weeklyRecap,
   taxedWeeklyStandings,
   mondayOf,
@@ -18,12 +21,12 @@ import {
   prettyDate,
   SPORT_META,
 } from "../lib/points.js";
-import Sparkline from "../components/Sparkline.jsx";
+import { achievementUnlocksInWeek } from "../lib/achievements.js";
 import RaceLane, { LANE_COLORS } from "../components/RaceLane.jsx";
 import Avatar from "../components/Avatar.jsx";
 import Statue from "../components/Statue.jsx";
 import WeeklyRecap from "../components/WeeklyRecap.jsx";
-import { statueUrlFor } from "../lib/statues.js";
+import { statueUrlFor, statueMaterialFor } from "../lib/statues.js";
 import { Fragment, useState } from "react";
 
 function TrendArrow({ delta, prior }) {
@@ -52,21 +55,36 @@ export default function Dashboard() {
   const loading = aLoading || sLoading;
   const asOf = todayStr();
   const board = rolling14Day(sessions, athletes, asOf);
-  // The other two races (Casey's boards direction, Nov 3, 2026): the
-  // weekly 7-day race (past winners listed below the races) and the
-  // quarterly season race. All-time totals stay on athlete profiles as
-  // unranked records — never a ranked board.
+  // Layout (Casey, Nov 16, 2026): prestige first, live action second,
+  // history last — Throne hero → this week's race → rolling 14-day
+  // board → season race → Hall of Kings + Cellar → past winners →
+  // hype chips.
   const weekStart = mondayOf(asOf);
   const throne = currentThrone(sessions, athletes, asOf, flags);
+  const spoon = currentSpoon(sessions, athletes, asOf);
+  const grip = throneGrip(sessions, athletes, asOf, flags);
+  const bleeding = grip ? grip.find((g) => g.bleeding) : null;
   const hall = hallOfKings(sessions, athletes, asOf, flags);
-  const weekRows = taxedWeeklyStandings(sessions, athletes, weekStart, throne);
+  const cellar = hallOfCellar(sessions, athletes, asOf);
+  const weekRows = taxedWeeklyStandings(sessions, athletes, weekStart, throne, spoon);
   const reignById = {};
   for (const h of throne?.holders || []) reignById[h.athlete.id] = h.reignWeeks;
+  const spoonById = {};
+  for (const h of spoon.holders) spoonById[h.athlete.id] = h;
+  // On Fire: the rolling 7-day points leader wears the flame.
+  const fireRows = rangeStandings(sessions, athletes, addDays(asOf, -6), asOf);
+  const fireTop = fireRows.length > 0 ? fireRows[0].points : 0;
+  const fireIds = new Set(
+    fireTop > 0 ? fireRows.filter((r) => r.points === fireTop).map((r) => r.athlete.id) : []
+  );
   const pastWinners = weeklyWinners(sessions, athletes, asOf, flags);
   // Monday-morning recap (Casey, Nov 16, 2026): the coronation for
   // the week just closed, shown once per week per browser — the key
   // is the recapped week's Monday, so a new week re-arms it.
   const recap = weeklyRecap(sessions, athletes, asOf, flags);
+  const recapAchievements = recap
+    ? achievementUnlocksInWeek(sessions, athletes, flags, recap.weekStart, asOf)
+    : [];
   const recapSeen = (() => {
     if (!recap) return true;
     try {
@@ -139,10 +157,10 @@ export default function Dashboard() {
 
   return (
     <div className="page">
-      <h1>🏆 Leaderboard</h1>
+      <h1>🏆 The Board</h1>
       <p className="sub">
-        Three races at once: rolling 14 days · this week's sprint · the{" "}
-        {quarter.label} season race — points = load × handicap in all three
+        Points = load × handicap — the king is taxed, the spoon is
+        boosted, and everyone is watching.
       </p>
       {athlete && mySessions.length === 0 && sessions.length > 0 && (
         <div className="card" style={{ borderColor: "#3a4a1f" }}>
@@ -152,7 +170,7 @@ export default function Dashboard() {
             temporary. Log a workout, or paste a coach block from your AI
             coach, and you're racing.
           </p>
-          <Link to="/log" className="btn" style={{ marginTop: 8 }}>
+          <Link to="/coaches-hub" className="btn" style={{ marginTop: 8 }}>
             ➕ Log your first session
           </Link>
         </div>
@@ -175,55 +193,39 @@ export default function Dashboard() {
             {seeding ? "Loading demo data…" : "Load demo data"}
           </button>
           <div style={{ marginTop: 10 }}>
-            <Link to="/log" className="btn ghost">Log a session instead</Link>
+            <Link to="/coaches-hub" className="btn ghost">Log a session instead</Link>
           </div>
         </div>
       ) : (
         <>
-          <div className="card" style={{ padding: "6px 14px" }}>
-            {board.map((row) => {
-              const series = dailyPoints(
-                sessions,
-                row.athlete.id,
-                addDays(asOf, -13),
-                asOf
-              ).map((d) => d.points);
-              return (
-                <Link
-                  key={row.athlete.id}
-                  to={`/athletes/${row.athlete.id}`}
-                  className="board-row"
-                >
-                  <div className={`rank r${row.rank <= 3 ? row.rank : 0}`}>
-                    {row.rank}
-                  </div>
-                  <Avatar
-                    athlete={row.athlete}
-                    size={34}
-                    reign={reignById[row.athlete.id] || 0}
-                  />
-                  <div className="grow">
-                    <div className="ath-name">{row.athlete.name}</div>
-                    <div className="small muted">
-                      {row.sessionCount} sessions · hcp {Number(row.athlete.handicap ?? 1).toFixed(2)}
-                    </div>
-                  </div>
-                  <Sparkline data={series} />
-                  <div>
-                    <div className="pts">{row.points}</div>
-                    <TrendArrow delta={row.delta} prior={row.prior} />
-                  </div>
-                </Link>
-              );
-            })}
-          </div>
-
-          <h1 style={{ fontSize: 18, marginTop: 18 }}>👑 The Throne</h1>
-          <div className="card throne-card" style={{ marginTop: 8 }}>
+          {/* ——— 1 · The Throne hero ——— */}
+          <div className="card throne-card throne-hero">
             {throne ? (
-              <>
-                {throne.holders.map((h) => (
-                  <Fragment key={h.athlete.id}>
+              throne.holders.map((h) => (
+                <Fragment key={h.athlete.id}>
+                  {statueUrlFor(h.athlete) ? (
+                    <Statue
+                      athlete={h.athlete}
+                      reign={h.reignWeeks}
+                      variant="hero"
+                      overlay={
+                        <>
+                          <div className="throne-name">{h.athlete.name}</div>
+                          <div className="throne-title">
+                            👑 {h.title} · reign of {h.reignWeeks} week
+                            {h.reignWeeks === 1 ? "" : "s"} ·{" "}
+                            {statueMaterialFor(h.reignWeeks)} statue
+                          </div>
+                          <div className="small" style={{ color: "#d8deea" }}>
+                            Won the week of {prettyDate(throne.weekStart)} —
+                            defends this week at{" "}
+                            <strong>×{h.taxFactor.toFixed(2)}</strong> (dynasty
+                            tax, weekly-race points only)
+                          </div>
+                        </>
+                      }
+                    />
+                  ) : (
                     <div className="throne-holder">
                       <Avatar athlete={h.athlete} size={84} reign={h.reignWeeks} crownScale={1.05} />
                       <div>
@@ -240,62 +242,62 @@ export default function Dashboard() {
                         </div>
                       </div>
                     </div>
-                    <Statue athlete={h.athlete} reign={h.reignWeeks} variant="card" />
-                  </Fragment>
-                ))}
-              </>
+                  )}
+                </Fragment>
+              ))
             ) : (
               <p className="small muted" style={{ margin: 6 }}>
                 The throne sits empty. Win a weekly race to take it — then
                 defend it, if you can.
               </p>
             )}
-            <p className="small muted" style={{ marginTop: 10 }}>
-              Consecutive weekly wins build a reign — and a dynasty tax:
-              reign week 2 ×0.95 · week 3 ×0.90 · week 4 ×0.85 · week 5+
-              ×0.80, charged on the holder's weekly-race points only.
-              Session points are never taxed. Titles: The New King → The
-              Undisputed → The Dynasty → The Legend. The holder's crown
-              itself grows with the reign — more points, more jewels, more
-              regalia every week it survives. And the holder's statue
-              below escalates with it: bronze in week 1, silver in week
-              2, gold in week 3 — radiant beyond.
-            </p>
-            {hall.length > 0 && (
-              <>
-                <h3 style={{ marginTop: 12 }}>🏛️ Hall of Kings</h3>
-                <div className="hall">
-                  {hall.map((r) => (
-                    <div
-                      className={`hall-king${r.current ? " current" : ""}`}
-                      key={`${r.athlete.id}-${r.fromWeek}`}
-                    >
-                      {statueUrlFor(r.athlete) ? (
-                        <Statue athlete={r.athlete} reign={r.weeks} variant="hall" />
+            {grip &&
+              grip.map((g) =>
+                g.challenger ? (
+                  <div className="grip" key={g.holder.athlete.id}>
+                    <div className="grip-label">
+                      {g.bleeding ? (
+                        <>
+                          🩸 <strong>{g.challenger.name}</strong> is ahead{" "}
+                          {g.challengerPoints}–{g.kingPoints} — the king is
+                          bleeding
+                        </>
                       ) : (
-                        <Avatar
-                          athlete={r.athlete}
-                          size={44}
-                          reign={r.weeks}
-                        />
+                        <>
+                          Grip — nearest challenger {g.challenger.name} at{" "}
+                          {g.gripPct}% of the king ({g.challengerPoints} vs{" "}
+                          {g.kingPoints})
+                        </>
                       )}
-                      <div className="hk-name">{r.athlete.name}</div>
-                      <div className="hk-meta">
-                        {r.weeks}-week reign
-                        <br />
-                        {r.title}
-                        <br />
-                        {r.current ? "👑 reigning" : prettyDate(r.fromWeek)}
-                      </div>
                     </div>
-                  ))}
-                </div>
-              </>
-            )}
+                    <div className="grip-track">
+                      <div
+                        className={`grip-fill${g.bleeding ? " bleeding" : ""}`}
+                        style={{ width: `${Math.min(g.gripPct, 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                ) : null
+              )}
+            <p className="small muted" style={{ marginTop: 10 }}>
+              Win the week, take the Throne: reigns earn titles (The New
+              King → The Undisputed → The Dynasty → The Legend) and a
+              dynasty tax up to ×0.80 — and two straight last-place
+              finishes arm the Spoon's ×1.10 boost.
+            </p>
           </div>
 
+          {/* ——— 2 · This week's race ——— */}
           <h1 style={{ fontSize: 18, marginTop: 18 }}>🏁 This week's race</h1>
           <div className="card race-card" style={{ marginTop: 8 }}>
+            {bleeding && (
+              <div className="bleeding-banner">
+                🩸 <strong>THE KING IS BLEEDING</strong> —{" "}
+                {bleeding.challenger.name} leads {bleeding.holder.athlete.name}{" "}
+                {bleeding.challengerPoints}–{bleeding.kingPoints} in this
+                week's race.
+              </div>
+            )}
             {weekRows.map((row, i) => (
               <RaceLane
                 key={row.athlete.id}
@@ -303,6 +305,15 @@ export default function Dashboard() {
                 topPoints={weekRows.length > 0 ? weekRows[0].points : 0}
                 color={LANE_COLORS[i % LANE_COLORS.length]}
                 reign={reignById[row.athlete.id] || 0}
+                spoonStreak={spoonById[row.athlete.id]?.streak || 0}
+                onFire={fireIds.has(row.athlete.id)}
+                rankTitle={
+                  row.rank === 2
+                    ? "The Heir"
+                    : row.rank === 3
+                      ? "The Pretender"
+                      : spoonById[row.athlete.id]?.title || ""
+                }
                 boardId="weekly"
               />
             ))}
@@ -313,11 +324,48 @@ export default function Dashboard() {
                 ? ` — ${throne.holders.map((h) => h.athlete.name).join(" & ")} defend${
                     throne.holders.length === 1 ? "s" : ""
                   } it at ×${throne.holders[0].taxFactor.toFixed(2)}`
+                : ""}
+              {spoon.holders.some((h) => h.boostActive)
+                ? ` · ${spoon.holders
+                    .filter((h) => h.boostActive)
+                    .map((h) => h.athlete.name)
+                    .join(" & ")} climb${
+                    spoon.holders.filter((h) => h.boostActive).length === 1 ? "s" : ""
+                  } with the spoon boost at ×1.10`
                 : ""}{" "}
               — past winners below.
             </p>
           </div>
 
+          {/* ——— 3 · Rolling 14-day board ——— */}
+          <h1 style={{ fontSize: 18, marginTop: 18 }}>📊 Rolling 14 days</h1>
+          <div className="card" style={{ padding: "6px 14px", marginTop: 8 }}>
+            {board.map((row) => (
+              <Link
+                key={row.athlete.id}
+                to={`/athletes/${row.athlete.id}`}
+                className="board-row"
+              >
+                <div className={`rank r${row.rank <= 3 ? row.rank : 0}`}>
+                  {row.rank}
+                </div>
+                <Avatar
+                  athlete={row.athlete}
+                  size={34}
+                  reign={reignById[row.athlete.id] || 0}
+                />
+                <div className="grow">
+                  <div className="ath-name">{row.athlete.name}</div>
+                </div>
+                <div>
+                  <div className="pts">{row.points}</div>
+                </div>
+                <TrendArrow delta={row.delta} prior={row.prior} />
+              </Link>
+            ))}
+          </div>
+
+          {/* ——— 4 · Season race ——— */}
           <h1 style={{ fontSize: 18, marginTop: 18 }}>📅 Season race — {quarter.label}</h1>
           <div className="card race-card" style={{ marginTop: 8 }}>
             {quarterRows.map((row, i) => (
@@ -327,6 +375,7 @@ export default function Dashboard() {
                 topPoints={quarterRows.length > 0 ? quarterRows[0].points : 0}
                 color={LANE_COLORS[i % LANE_COLORS.length]}
                 reign={reignById[row.athlete.id] || 0}
+                onFire={fireIds.has(row.athlete.id)}
                 boardId="quarterly"
               />
             ))}
@@ -337,6 +386,69 @@ export default function Dashboard() {
             </p>
           </div>
 
+          {/* ——— 5 · Hall of Kings + the Cellar ——— */}
+          {(hall.length > 0 || cellar.length > 0) && (
+            <>
+              <h1 style={{ fontSize: 18, marginTop: 18 }}>🏛️ Hall of Kings · 🥄 The Cellar</h1>
+              <div className="card" style={{ marginTop: 8 }}>
+                {hall.length > 0 && (
+                  <div className="hall">
+                    {hall.map((r) => (
+                      <div
+                        className={`hall-king${r.current ? " current" : ""}`}
+                        key={`${r.athlete.id}-${r.fromWeek}`}
+                      >
+                        {statueUrlFor(r.athlete) ? (
+                          <Statue athlete={r.athlete} reign={r.weeks} variant="hall" />
+                        ) : (
+                          <Avatar
+                            athlete={r.athlete}
+                            size={44}
+                            reign={r.weeks}
+                          />
+                        )}
+                        <div className="hk-name">{r.athlete.name}</div>
+                        <div className="hk-meta">
+                          {r.weeks}-week reign
+                          <br />
+                          {r.title}
+                          <br />
+                          {r.current ? "👑 reigning" : prettyDate(r.fromWeek)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {cellar.length > 0 && (
+                  <>
+                    <h3 style={{ marginTop: hall.length > 0 ? 10 : 0 }}>
+                      🥄 The Cellar — spoon reigns of shame
+                    </h3>
+                    <div className="hall">
+                      {cellar.map((r) => (
+                        <div
+                          className={`hall-king cellar${r.current ? " current" : ""}`}
+                          key={`${r.athlete.id}-${r.fromWeek}`}
+                        >
+                          <Avatar athlete={r.athlete} size={44} />
+                          <div className="hk-name">{r.athlete.name}</div>
+                          <div className="hk-meta">
+                            {r.weeks}-week streak
+                            <br />
+                            {r.title}
+                            <br />
+                            {r.current ? "🥄 serving now" : prettyDate(r.fromWeek)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            </>
+          )}
+
+          {/* ——— 6 · Past weekly winners ——— */}
           <h1 style={{ fontSize: 18, marginTop: 18 }}>🏆 Past weekly winners</h1>
           <div className="card" style={{ marginTop: 8 }}>
             {pastWinners.length === 0 ? (
@@ -377,66 +489,42 @@ export default function Dashboard() {
             )}
           </div>
 
-          <h1 style={{ fontSize: 18, marginTop: 18 }}>🔥 Hype</h1>
-          <div className="badges">
-            <div className="badge">
-              <div className="emoji">💥</div>
-              <div className="t">Biggest session this week</div>
-              <div className="v">
-                {badges.biggestSession ? (
-                  <>
-                    {SPORT_META[badges.biggestSession.sport]?.icon}{" "}
-                    {athleteName(athletes, badges.biggestSession.athleteId)}
-                    <br />
-                    <span className="muted">{badges.biggestSession.points} pts</span>
-                  </>
-                ) : (
-                  <span className="muted">—</span>
-                )}
-              </div>
-            </div>
-            <div className="badge">
-              <div className="emoji">⚡</div>
-              <div className="t">Longest streak</div>
-              <div className="v">
-                {badges.longestStreak ? (
-                  <>
-                    {badges.longestStreak.athlete.name}
-                    <br />
-                    <span className="muted">{badges.longestStreak.days} days</span>
-                  </>
-                ) : (
-                  <span className="muted">—</span>
-                )}
-              </div>
-            </div>
-            <div className="badge">
-              <div className="emoji">🚀</div>
-              <div className="t">Comeback of the week</div>
-              <div className="v">
-                {badges.comeback ? (
-                  <>
-                    {badges.comeback.athlete.name}
-                    <br />
-                    <span className="muted">+{badges.comeback.delta} pts</span>
-                  </>
-                ) : (
-                  <span className="muted">—</span>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="notice" style={{ marginTop: 14 }}>
-            Bad days age out on their own — the rolling board only ever counts
-            the last 14 days, the weekly race resets every Monday, and the
-            season race turns over with the quarter. There is no all-time
-            ranked board: career totals sit on each athlete's profile as
-            records, not a race nobody new could ever win.
+          {/* ——— 7 · Hype chips ——— */}
+          <div className="hype-chips">
+            <span className="hype-chip">
+              💥 Biggest session:{" "}
+              {badges.biggestSession ? (
+                <>
+                  {SPORT_META[badges.biggestSession.sport]?.icon}{" "}
+                  {athleteName(athletes, badges.biggestSession.athleteId)} ·{" "}
+                  {badges.biggestSession.points} pts
+                </>
+              ) : (
+                "—"
+              )}
+            </span>
+            <span className="hype-chip">
+              ⚡ Longest streak:{" "}
+              {badges.longestStreak
+                ? `${badges.longestStreak.athlete.name} · ${badges.longestStreak.days} days`
+                : "—"}
+            </span>
+            <span className="hype-chip">
+              🚀 Comeback:{" "}
+              {badges.comeback
+                ? `${badges.comeback.athlete.name} · +${badges.comeback.delta} pts`
+                : "—"}
+            </span>
           </div>
         </>
       )}
-      {showRecap && <WeeklyRecap recap={recap} onClose={closeRecap} />}
+      {showRecap && (
+        <WeeklyRecap
+          recap={recap}
+          achievements={recapAchievements}
+          onClose={closeRecap}
+        />
+      )}
     </div>
   );
 }

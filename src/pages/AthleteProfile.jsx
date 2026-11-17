@@ -32,6 +32,8 @@ import {
 } from "../lib/points.js";
 import Avatar from "../components/Avatar.jsx";
 import Statue from "../components/Statue.jsx";
+import ScoreReceipt from "../components/ScoreReceipt.jsx";
+import { achievementsForAthlete } from "../lib/achievements.js";
 import { useEffect, useState } from "react";
 
 const PIE_COLORS = ["#7cc4ff", "#8ce99a", "#b197fc", "#ffb35c", "#66d9e8"];
@@ -51,6 +53,7 @@ export default function AthleteProfile() {
   const [ftpW, setFtpW] = useState("");
   const [settingsMsg, setSettingsMsg] = useState("");
   const [settingsSaving, setSettingsSaving] = useState(false);
+  const [openSessionId, setOpenSessionId] = useState(null);
 
   const loading = aLoading || sLoading;
   const athlete = athletes.find((a) => a.id === id);
@@ -114,6 +117,9 @@ export default function AthleteProfile() {
   const throneNow = currentThrone(sessions, athletes, asOf, flags);
   const myReign =
     throneNow?.holders.find((h) => h.athlete.id === id) || null;
+  // Secret-achievement trophy shelf + recent sessions (Nov 16, 2026).
+  const shelf = achievementsForAthlete(sessions, athletes, id, flags, asOf);
+  const recentSessions = mine.slice(0, 10);
 
   const history = [...(athlete.handicapHistory || [])].sort((a, b) =>
     a.effectiveFrom < b.effectiveFrom ? 1 : -1
@@ -245,6 +251,69 @@ export default function AthleteProfile() {
         {trophies.length > 12 && (
           <p className="small muted">…and {trophies.length - 12} earlier wins.</p>
         )}
+      </div>
+
+      <div className="card">
+        <h3>🎖️ Trophy shelf — {shelf.unlocked.length} of {shelf.total} secret achievements</h3>
+        {shelf.unlocked.length === 0 && (
+          <p className="muted small">
+            Nothing yet. The badges are hidden — nobody knows what earns
+            them, including this athlete. They'll find out the fun way.
+          </p>
+        )}
+        <div className="ach-shelf">
+          {shelf.unlocked.map((u) => (
+            <div className="ach-tile" key={u.id}>
+              <div className="ach-icon">{u.icon}</div>
+              <div className="ach-title">{u.title}</div>
+              <div className="ach-desc">{u.desc}</div>
+              <div className="ach-reward">Reward: {u.reward}</div>
+              <div className="ach-date">Unlocked {prettyDate(u.date)}</div>
+            </div>
+          ))}
+          {Array.from({ length: shelf.lockedCount }).map((_, i) => (
+            <div className="ach-tile locked" key={`locked-${i}`}>
+              <div className="ach-icon">❔</div>
+              <div className="ach-title">???</div>
+              <div className="ach-desc">Undiscovered. Keep training.</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="card">
+        <h3>🗂️ Recent sessions</h3>
+        {recentSessions.length === 0 ? (
+          <p className="muted small">No sessions logged yet.</p>
+        ) : (
+          recentSessions.map((s) => {
+            const meta = SPORT_META[s.sport] || { label: s.sport, icon: "🏅" };
+            const open = openSessionId === s.id;
+            return (
+              <div key={s.id} style={{ borderBottom: "1px solid var(--card-edge)", padding: "6px 0" }}>
+                <div
+                  className="row"
+                  style={{ cursor: "pointer" }}
+                  onClick={() => setOpenSessionId(open ? null : s.id)}
+                >
+                  <span>{meta.icon}</span>
+                  <span className="grow">
+                    {meta.label}
+                    <span className="small muted">
+                      {" "}· {prettyDate(s.date)} · {s.minutes} min
+                    </span>
+                  </span>
+                  <span className="pts">{s.points}</span>
+                </div>
+                {open && <ScoreReceipt session={s} athlete={athlete} />}
+              </div>
+            );
+          })
+        )}
+        <p className="small muted" style={{ marginTop: 8 }}>
+          Tap a session for its 🧾 score receipt — exactly how its
+          points were computed.
+        </p>
       </div>
 
       {isMe && (

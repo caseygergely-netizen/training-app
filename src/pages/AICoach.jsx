@@ -203,8 +203,35 @@ your difficulty score. Consistent judgment beats precision.
   current holder (photo, title, reign, tax) and the Hall of Kings —
   every past reign. The holder's avatar wears the crown app-wide for
   as long as the reign lasts.
+- The Spoon (the tax's mirror at the bottom of the table): finishing
+  LAST in a completed week's race earns the spoon, and consecutive
+  last-place finishes climb a shame ladder — 1 week "The Spoon",
+  2 "The Anchor", 3 "The Cellar Dweller", 4+ "The Golden Spoon".
+  The spoon carries a SPOON BOOST on weekly-race points, gated at
+  TWO consecutive last-place finishes: one last-place week earns the
+  spoon and nothing else; finishing last in BOTH of the two
+  immediately preceding completed weeks arms a ×1.10 multiplier on
+  that athlete's weekly-race points for the week that follows. The
+  boost stays on while the last-place streak continues and switches
+  off the first week they don't finish last. Last place is judged on
+  the same taxed/boosted standings that decide the winner, and
+  weekly winners are decided on taxed AND boosted points — when you
+  sanity-check a weekly result, apply the defender's tax and any
+  armed spoon boost before calling the winner or the loser. Like
+  the tax, the boost touches weekly-race points only: session
+  points, the rolling board and the season race are never boosted,
+  and no stored points ever change. The Dashboard shows the boost
+  openly on the holder's lane, and past spoon reigns collect in the
+  Cellar beside the Hall of Kings.
 - Feed: session summaries, newest first; tap for full details. Each session
-  shows its Load next to its points. Athletes can edit or delete their own
+  shows its Load next to its points. Tapping a session also opens its
+  SCORE RECEIPT — "How this scored": the load source, the exact inputs
+  that fed it (power / NP, avg HR vs threshold HR, FTP, Relative Effort,
+  minutes, difficulty, elevation), any duration discount, the handicap
+  in effect, and the final points. NOTE: the load inputs you store on a
+  session are exactly what athletes see on that receipt — keep them
+  complete and honest, because the whole league can now audit any score
+  in one tap. Athletes can edit or delete their own
   sessions here — points recalculate only when minutes or difficulty
   actually change (a details/bests-only save never re-prices a session).
   Any athlete can also FLAG

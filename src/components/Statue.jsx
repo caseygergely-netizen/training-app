@@ -9,13 +9,16 @@ import { statueUrlFor, statueMaterialFor } from "../lib/statues.js";
  * glow escalate alongside. Renders nothing for an athlete with no
  * statue asset, so callers can fall back to the plain Avatar.
  * Variants: "card" (Throne card / profile), "hall" (Hall of Kings
- * strip), "recap" (Monday recap modal).
+ * strip), "recap" (Monday recap modal), "hero" (the Dashboard's
+ * Throne hero — full-width, with the holder's name / title / tax as
+ * an overlay bar on the image; pass the bar as `overlay`).
  */
 export default function Statue({
   athlete,
   reign = 1,
   variant = "card",
   className = "",
+  overlay = null,
 }) {
   const url = statueUrlFor(athlete);
   if (!url) return null;
@@ -30,7 +33,11 @@ export default function Statue({
         draggable={false}
         loading="lazy"
       />
-      <figcaption>{statueMaterialFor(tier)} statue</figcaption>
+      {overlay ? (
+        <div className="statue-overlay">{overlay}</div>
+      ) : (
+        <figcaption>{statueMaterialFor(tier)} statue</figcaption>
+      )}
     </figure>
   );
 }

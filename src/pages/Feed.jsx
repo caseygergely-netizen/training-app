@@ -16,6 +16,7 @@ import {
 } from "../lib/points.js";
 import { useAuth } from "../App.jsx";
 import Avatar from "../components/Avatar.jsx";
+import ScoreReceipt from "../components/ScoreReceipt.jsx";
 
 function RerateControl({ session, athlete }) {
   const [saving, setSaving] = useState(false);
@@ -438,6 +439,7 @@ function SessionCard({ session, athleteName, isMine, athlete, ownerAthlete, open
             </>
           )}
           {!session.details && !session.notes && !isTest && !session.bests && "No extra details logged."}
+          <ScoreReceipt session={session} athlete={ownerAthlete} />
           {athlete && (
             <FlagControl
               session={session}
@@ -480,14 +482,15 @@ export default function Feed() {
     <div className="page">
       <h1>📰 Feed</h1>
       <p className="sub">
-        Summaries by default — tap any session for the full workout details
+        Summaries by default — tap any session for the full workout and
+        its 🧾 score receipt
       </p>
 
       {sessions.length === 0 ? (
         <div className="empty">
           <div className="big">📰</div>
           <p>Nothing logged yet. First session sets the tone.</p>
-          <Link to="/log" className="btn ghost" style={{ marginTop: 12 }}>
+          <Link to="/coaches-hub" className="btn ghost" style={{ marginTop: 12 }}>
             Log a session
           </Link>
         </div>

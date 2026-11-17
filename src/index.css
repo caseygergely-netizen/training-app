@@ -500,3 +500,95 @@ pre.code {
   .statue-t5 { animation: none; }
   .lane-moved .race-avatar { animation: none; }
 }
+
+/* ——— Game-on batch (Casey, Nov 16, 2026): Throne hero, grip meter,
+   the Spoon, On Fire, rank titles, Corner star, hype chips,
+   trophy shelf ——— */
+
+/* Corner unread star on the tab bar */
+.tabbar a .ico { position: relative; }
+.tab-star {
+  position: absolute; top: -7px; right: -13px;
+  color: #ffd23f; font-size: 13px; line-height: 1;
+  filter: drop-shadow(0 0 4px rgba(255, 210, 63, 0.8));
+}
+
+/* Throne hero: full-width statue with the holder bar overlaid */
+.statue-hero { height: 400px; margin-top: 2px; }
+.statue-overlay {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  padding: 42px 14px 12px;
+  background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.82));
+  pointer-events: none;
+}
+.statue-overlay .throne-name { color: #fff; }
+.grip { margin-top: 12px; }
+.grip-label { font-size: 12.5px; color: var(--muted); margin-bottom: 5px; }
+.grip-label strong { color: var(--text); }
+.grip-track {
+  height: 9px; border-radius: 99px; overflow: hidden;
+  background: var(--bg-soft); box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.55);
+}
+.grip-fill {
+  height: 100%; border-radius: 99px;
+  background: linear-gradient(90deg, #8a6d1f, #f2c14e);
+  transition: width 0.8s ease;
+}
+.grip-fill.bleeding { background: linear-gradient(90deg, #7a1f1f, #ff5252); }
+
+/* The King Is Bleeding banner on the weekly race */
+.bleeding-banner {
+  margin-bottom: 12px; padding: 9px 12px; border-radius: 10px;
+  background: #2a1414; border: 1px solid #5a2323; color: #ffb3b3;
+  font-size: 13px;
+}
+
+/* Lane avatar corners: crown top-right, spoon bottom-left, fire bottom-right */
+.race-avatar .avatar-spoon {
+  position: absolute; bottom: -30%; left: -16%; z-index: 3;
+  transform: rotate(-16deg); line-height: 1;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.55));
+}
+.race-avatar .avatar-fire {
+  position: absolute; bottom: -22%; right: -14%; z-index: 3;
+  font-size: 15px; line-height: 1;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.55));
+}
+.spoon-glyph { display: block; overflow: visible; }
+.race-title { color: var(--muted); font-weight: 600; font-size: 12px; }
+
+/* The Cellar strip (spoon reigns) beside the Hall of Kings */
+.hall-king.cellar { border-color: #333d52; }
+.hall-king.cellar.current { border-color: #54627f; background: linear-gradient(180deg, #1a2233, var(--bg-soft)); }
+
+/* Hype as a chip row at the foot of the board */
+.hype-chips {
+  display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px;
+}
+.hype-chip {
+  font-size: 12px; font-weight: 700; color: var(--muted);
+  background: var(--card); border: 1px solid var(--card-edge);
+  border-radius: 999px; padding: 7px 12px;
+}
+
+/* Secret-achievement trophy shelf (profile) + recap unlocks */
+.ach-shelf {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+}
+.ach-tile {
+  background: var(--bg-soft); border: 1px solid #4a3a14;
+  border-radius: 12px; padding: 10px;
+}
+.ach-tile.locked { border-color: var(--card-edge); opacity: 0.55; }
+.ach-icon { font-size: 24px; }
+.ach-title { font-size: 13.5px; font-weight: 800; margin-top: 4px; }
+.ach-desc { font-size: 11.5px; color: #cfd6e4; margin-top: 3px; line-height: 1.45; }
+.ach-reward { font-size: 11px; color: #f2c14e; margin-top: 5px; }
+.ach-date { font-size: 10.5px; color: var(--muted); margin-top: 4px; }
+.ach-unlock {
+  background: rgba(255, 210, 63, 0.07);
+  border: 1px solid #4a3a14; border-radius: 10px;
+  padding: 9px 11px; margin-top: 8px;
+}
+.ach-unlock-head { font-weight: 800; font-size: 14px; color: #ffe9a8; }

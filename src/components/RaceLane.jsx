@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { avatarUrlFor } from "../lib/avatars.js";
 import { initialsOf } from "./Avatar.jsx";
 import CrownGlyph from "./CrownGlyph.jsx";
+import SpoonGlyph from "./SpoonGlyph.jsx";
 
 export const LANE_COLORS = [
   "#c6ff4a",
@@ -23,6 +24,12 @@ export const LANE_COLORS = [
  * tax), in which case `points` is the taxed score the race runs on.
  * `reign` (optional) is the athlete's current Throne reign in weeks:
  * their lane avatar wears the crown + reign frame while they hold it.
+ * `spoonStreak` (optional) is their current Spoon streak — the avatar
+ * wears the spoon glyph in the opposite corner from the crown, and a
+ * weekly row may carry `boostFactor` (the spoon boost, shown openly
+ * like the tax). `onFire` adds the 🔥 badge for the rolling 7-day
+ * leader; `rankTitle` appends a court title ("The Heir" / "The
+ * Pretender" / a spoon title) beside the name on weekly lanes.
  * `boardId` (optional) enables the entrance animation (Casey, Nov 16,
  * 2026): the lane remembers each athlete's points in localStorage and,
  * on mount, starts the avatar at its last-seen position and glides it
@@ -32,12 +39,22 @@ export const LANE_COLORS = [
  * visually honest). First-ever visit starts everyone at the gate.
  * Reduced-motion users skip the glide entirely.
  */
-export default function RaceLane({ row, topPoints, color, reign = 0, boardId = "" }) {
+export default function RaceLane({
+  row,
+  topPoints,
+  color,
+  reign = 0,
+  boardId = "",
+  spoonStreak = 0,
+  onFire = false,
+  rankTitle = "",
+}) {
   const pct = topPoints > 0 ? 4 + (row.points / topPoints) * 88 : 4;
   const isLeader = row.rank === 1 && row.points > 0;
   const photo = avatarUrlFor(row.athlete);
   const frame = reign > 0 ? Math.min(reign, 4) : 0;
   const taxed = row.taxFactor != null && row.taxFactor < 1;
+  const boosted = row.boostFactor != null && row.boostFactor > 1;
   const [shownPct, setShownPct] = useState(null);
   const [moved, setMoved] = useState(false);
   const startedRef = useRef(false);
@@ -117,6 +134,7 @@ export default function RaceLane({ row, topPoints, color, reign = 0, boardId = "
         <span className="race-name">
           {isLeader ? "👑 " : ""}
           {row.athlete.name}
+          {rankTitle && <span className="race-title"> · {rankTitle}</span>}
         </span>
         <span className="race-pts">
           {row.points}
@@ -125,6 +143,12 @@ export default function RaceLane({ row, topPoints, color, reign = 0, boardId = "
             <span className="small muted">
               {" "}
               ({row.rawPoints} × {row.taxFactor.toFixed(2)} 👑 tax)
+            </span>
+          )}
+          {boosted && (
+            <span className="small muted">
+              {" "}
+              ({row.rawPoints} × {row.boostFactor.toFixed(2)} 🥄 boost)
             </span>
           )}
         </span>
@@ -144,6 +168,16 @@ export default function RaceLane({ row, topPoints, color, reign = 0, boardId = "
           {frame > 0 && (
             <span className="avatar-crown" aria-hidden="true">
               <CrownGlyph tier={Math.min(reign, 5)} width={30} />
+            </span>
+          )}
+          {spoonStreak > 0 && (
+            <span className="avatar-spoon" aria-hidden="true">
+              <SpoonGlyph tier={Math.min(spoonStreak, 4)} width={24} />
+            </span>
+          )}
+          {onFire && (
+            <span className="avatar-fire" aria-hidden="true" title="On Fire — rolling 7-day leader">
+              🔥
             </span>
           )}
         </div>

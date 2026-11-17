@@ -3,11 +3,10 @@ import { BrowserRouter, Routes, Route, Link, Navigate, useNavigate } from "react
 import Nav from "./components/Nav.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
 import Feed from "./pages/Feed.jsx";
-import LogSession from "./pages/LogSession.jsx";
 import Benchmarks from "./pages/Benchmarks.jsx";
 import CoachesCorner from "./pages/CoachesCorner.jsx";
 import AthleteProfile from "./pages/AthleteProfile.jsx";
-import AICoach from "./pages/AICoach.jsx";
+import Coaches from "./pages/Coaches.jsx";
 import Invite from "./pages/Invite.jsx";
 import Login from "./pages/Login.jsx";
 import FinishSetup from "./pages/FinishSetup.jsx";
@@ -64,8 +63,8 @@ function Header() {
             </div>
           )}
           <div style={{ marginBottom: 8 }}>
-            <Link to="/ai-coach" onClick={() => setMenuOpen(false)}>
-              🤖 AI coach contract
+            <Link to="/coaches-hub" onClick={() => setMenuOpen(false)}>
+              🤖 Coaches — log &amp; contract
             </Link>
           </div>
           <button
@@ -151,11 +150,14 @@ function Shell() {
         <Route path="/login" element={<Login />} />
         <Route path="/" element={<RequireAuth><Dashboard /></RequireAuth>} />
         <Route path="/feed" element={<RequireAuth><Feed /></RequireAuth>} />
-        <Route path="/log" element={<RequireAuth><LogSession /></RequireAuth>} />
+        {/* Log + AI Coach merged into one "Coaches" tab (Nov 16, 2026);
+            the old paths redirect so existing links keep working. */}
+        <Route path="/coaches-hub" element={<RequireAuth><Coaches /></RequireAuth>} />
+        <Route path="/log" element={<Navigate to="/coaches-hub" replace />} />
+        <Route path="/ai-coach" element={<Navigate to="/coaches-hub" replace />} />
         <Route path="/tests" element={<RequireAuth><Benchmarks /></RequireAuth>} />
         <Route path="/coaches" element={<RequireAuth><CoachesCorner /></RequireAuth>} />
         <Route path="/athletes/:id" element={<RequireAuth><AthleteProfile /></RequireAuth>} />
-        <Route path="/ai-coach" element={<RequireAuth><AICoach /></RequireAuth>} />
         <Route path="/invite" element={<RequireAuth><Invite /></RequireAuth>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

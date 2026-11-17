@@ -403,6 +403,131 @@ export function throneTitleForReign(reignWeeks) {
   return THRONE_TITLES[Math.min(n, THRONE_TITLES.length) - 1];
 }
 
+/* ---------------- the Spoon (Casey, Nov 16, 2026) ---------------- */
+
+/**
+ * The Spoon: the Throne's mirror at the bottom of the table. Finishing
+ * LAST in a completed week's race earns the spoon, and consecutive
+ * last-place finishes climb a shame ladder — 1 "The Spoon" · 2 "The
+ * Anchor" · 3 "The Cellar Dweller" · 4+ "The Golden Spoon".
+ *
+ * The spoon carries a catch-up BOOST on weekly-race points, the mirror
+ * of the dynasty tax — but it is GATED (Casey's ruling, Nov 16, 2026):
+ * one last-place week earns the spoon and nothing else. The ×1.10
+ * switches on for a week only when the athlete finished last in BOTH
+ * of the two immediately preceding completed weeks; it then stays on
+ * while the last-place streak continues and switches off the first
+ * week they don't finish last. Weekly race only, never stacked with
+ * anything (the holder's own tax, if they somehow also held the
+ * Throne recently, is a separate multiplier on the same product —
+ * in practice the two never meet). Last place is judged on the same
+ * adjusted (taxed / boosted) standings that decide the winners, so
+ * the boost genuinely helps its holder climb out: escape last place
+ * and the streak — and the boost — ends. Session points, the rolling
+ * board and the season race are never boosted. A week nobody scores
+ * in has no last place and breaks every streak, exactly as it breaks
+ * every reign.
+ */
+export const SPOON_BOOST_FACTOR = 1.1;
+export const SPOON_BOOST_GATE = 2; // consecutive last-place weeks to arm the boost
+export const SPOON_TITLES = [
+  "The Spoon",
+  "The Anchor",
+  "The Cellar Dweller",
+  "The Golden Spoon",
+];
+
+/** Spoon shame title for a last-place streak of `streak` weeks (0 → null). */
+export function spoonTitleForStreak(streak) {
+  const n = Number(streak) || 0;
+  if (n <= 0) return null;
+  return SPOON_TITLES[Math.min(n, SPOON_TITLES.length) - 1];
+}
+
+/**
+ * The shared weekly chain: every completed Mon–Sun week in
+ * chronological order, with the dynasty tax AND the spoon boost
+ * applied. Both adjustments are stateful (reigns and last-place
+ * streaks carry week to week), so the Throne, the Spoon, the Cellar
+ * and the recap all read from this one walk and can never disagree.
+ * Internal — consumers use throneHistory / spoonHistory / currentSpoon.
+ * Weeks with no score at all carry hasRace=false, no winners and no
+ * last place, and reset both reigns and streaks.
+ */
+function weeklyChain(sessions, athletes, asOf = todayStr(), flags = []) {
+  if (!sessions || sessions.length === 0) return [];
+  const currentMonday = mondayOf(asOf);
+  let firstMonday = null;
+  for (const s of sessions) {
+    const m = mondayOf(s.date);
+    if (firstMonday === null || m < firstMonday) firstMonday = m;
+  }
+  const sessionById = new Map(sessions.map((s) => [s.id, s]));
+  const reigns = {}; // athleteId -> consecutive weekly wins entering the week
+  const streaks = {}; // athleteId -> consecutive last-place finishes entering the week
+  const weeks = [];
+  for (let wk = firstMonday; wk < currentMonday; wk = addDays(wk, 7)) {
+    const weekEnd = addDays(wk, 6);
+    const rows = weeklyStandings(sessions, athletes, wk);
+    const adjusted = rows.map((r) => {
+      const reign = reigns[r.athlete.id] || 0;
+      const taxFactor = reign > 0 ? throneTaxForReignWeek(reign + 1) : 1.0;
+      const streak = streaks[r.athlete.id] || 0;
+      const boostFactor = streak >= SPOON_BOOST_GATE ? SPOON_BOOST_FACTOR : 1.0;
+      return {
+        athlete: r.athlete,
+        raw: r.points,
+        sessions: r.sessions,
+        minutes: r.minutes,
+        taxFactor,
+        boostFactor,
+        points: round1(r.points * taxFactor * boostFactor),
+      };
+    });
+    adjusted.sort((a, b) => b.points - a.points);
+    adjusted.forEach((r, i) => (r.rank = i + 1));
+    const top = adjusted[0];
+    const hasRace = !!top && top.points > 0;
+    let winners = [];
+    let lastPlace = [];
+    if (hasRace) {
+      winners = adjusted.filter((t) => t.points === top.points);
+      const min = adjusted[adjusted.length - 1].points;
+      lastPlace = adjusted.filter((t) => t.points === min);
+    }
+    const winnerIds = new Set(winners.map((w) => w.athlete.id));
+    const lastIds = new Set(lastPlace.map((w) => w.athlete.id));
+    for (const a of athletes) {
+      reigns[a.id] = winnerIds.has(a.id) ? (reigns[a.id] || 0) + 1 : 0;
+      streaks[a.id] = lastIds.has(a.id) ? (streaks[a.id] || 0) + 1 : 0;
+    }
+    const asteriskByWinner = {};
+    const reignByWinner = {};
+    for (const w of winners) {
+      asteriskByWinner[w.athlete.id] = weekAsterisk(
+        flags, sessionById, w.athlete.id, wk, weekEnd
+      );
+      reignByWinner[w.athlete.id] = reigns[w.athlete.id];
+    }
+    const spoonByAthlete = {};
+    for (const lp of lastPlace) spoonByAthlete[lp.athlete.id] = streaks[lp.athlete.id];
+    weeks.push({
+      weekStart: wk,
+      weekEnd,
+      rows: adjusted,
+      winners: winners.map((w) => w.athlete),
+      lastPlace: lastPlace.map((w) => w.athlete),
+      rawPoints: top ? top.raw : 0,
+      taxedPoints: top ? top.points : 0,
+      asteriskByWinner,
+      reignByWinner,
+      spoonByAthlete,
+      hasRace,
+    });
+  }
+  return weeks;
+}
+
 /**
  * The taxed chain over every COMPLETED week, newest first:
  * [{ weekStart, weekEnd, winners, rawPoints, taxedPoints,
@@ -412,53 +537,121 @@ export function throneTitleForReign(reignWeeks) {
  * maps each winner's id to their reign length after that week.
  */
 export function throneHistory(sessions, athletes, asOf = todayStr(), flags = []) {
-  if (!sessions || sessions.length === 0) return [];
-  const currentMonday = mondayOf(asOf);
-  let firstMonday = null;
-  for (const s of sessions) {
-    const m = mondayOf(s.date);
-    if (firstMonday === null || m < firstMonday) firstMonday = m;
-  }
-  const sessionById = new Map(sessions.map((s) => [s.id, s]));
-  const counts = {}; // athleteId -> consecutive weekly wins entering the week
-  const out = [];
-  for (let wk = firstMonday; wk < currentMonday; wk = addDays(wk, 7)) {
-    const rows = weeklyStandings(sessions, athletes, wk);
-    const taxed = rows.map((r) => {
-      const reign = counts[r.athlete.id] || 0;
-      const factor = reign > 0 ? throneTaxForReignWeek(reign + 1) : 1.0;
-      return { athlete: r.athlete, raw: r.points, taxed: round1(r.points * factor) };
-    });
-    taxed.sort((a, b) => b.taxed - a.taxed);
-    const top = taxed[0];
-    if (!top || top.taxed <= 0) {
-      for (const a of athletes) counts[a.id] = 0;
-      continue;
+  return weeklyChain(sessions, athletes, asOf, flags)
+    .filter((w) => w.hasRace)
+    .map((w) => ({
+      weekStart: w.weekStart,
+      weekEnd: w.weekEnd,
+      winners: w.winners,
+      rawPoints: w.rawPoints,
+      taxedPoints: w.taxedPoints,
+      asteriskByWinner: w.asteriskByWinner,
+      reignByWinner: w.reignByWinner,
+      // The week's adjusted standings (tax + boost applied) and its
+      // last-place finishers with their streaks after that week.
+      rows: w.rows,
+      lastPlace: w.lastPlace.map((a) => ({
+        athlete: a,
+        streak: w.spoonByAthlete[a.id] || 0,
+        title: spoonTitleForStreak(w.spoonByAthlete[a.id] || 0),
+      })),
+    }))
+    .sort((a, b) => (a.weekStart < b.weekStart ? 1 : -1));
+}
+
+/**
+ * Every completed week's spoon result, newest first:
+ * [{ weekStart, weekEnd, holders: [{ athlete, streak, title }] }] —
+ * who finished last, and how long their last-place streak stood after
+ * that week. Weeks nobody scored in have no spoon and don't appear.
+ */
+export function spoonHistory(sessions, athletes, asOf = todayStr()) {
+  return weeklyChain(sessions, athletes, asOf, [])
+    .filter((w) => w.hasRace)
+    .map((w) => ({
+      weekStart: w.weekStart,
+      weekEnd: w.weekEnd,
+      holders: w.lastPlace.map((a) => ({
+        athlete: a,
+        streak: w.spoonByAthlete[a.id] || 0,
+        title: spoonTitleForStreak(w.spoonByAthlete[a.id] || 0),
+      })),
+    }))
+    .sort((a, b) => (a.weekStart < b.weekStart ? 1 : -1));
+}
+
+/**
+ * Who wears the Spoon in the CURRENT (in-progress) week, from the
+ * last-place streaks carried out of the completed weeks:
+ * { holders: [{ athlete, streak, title, boostActive, boostFactor }],
+ *   weekStart }.
+ * boostActive is the gate: streak >= 2 (last in both of the two
+ * preceding completed weeks) — the holder's weekly-race points this
+ * week are multiplied by boostFactor. A holder at streak 1 wears the
+ * spoon with no boost.
+ */
+export function currentSpoon(sessions, athletes, asOf = todayStr()) {
+  const chain = weeklyChain(sessions, athletes, asOf, []);
+  const weekStart = mondayOf(asOf);
+  if (chain.length === 0) return { holders: [], weekStart };
+  const last = chain[chain.length - 1];
+  const holders = [];
+  if (last.hasRace) {
+    for (const a of last.lastPlace) {
+      const streak = last.spoonByAthlete[a.id] || 0;
+      if (streak < 1) continue;
+      const boostActive = streak >= SPOON_BOOST_GATE;
+      holders.push({
+        athlete: a,
+        streak,
+        title: spoonTitleForStreak(streak),
+        boostActive,
+        boostFactor: boostActive ? SPOON_BOOST_FACTOR : 1.0,
+      });
     }
-    const winners = taxed.filter((t) => t.taxed === top.taxed);
-    const winnerIds = new Set(winners.map((w) => w.athlete.id));
-    for (const a of athletes)
-      counts[a.id] = winnerIds.has(a.id) ? (counts[a.id] || 0) + 1 : 0;
-    const weekEnd = addDays(wk, 6);
-    const asteriskByWinner = {};
-    const reignByWinner = {};
-    for (const w of winners) {
-      asteriskByWinner[w.athlete.id] = weekAsterisk(
-        flags, sessionById, w.athlete.id, wk, weekEnd
-      );
-      reignByWinner[w.athlete.id] = counts[w.athlete.id];
-    }
-    out.push({
-      weekStart: wk,
-      weekEnd,
-      winners: winners.map((w) => w.athlete),
-      rawPoints: top.raw,
-      taxedPoints: top.taxed,
-      asteriskByWinner,
-      reignByWinner,
-    });
   }
-  return out.sort((a, b) => (a.weekStart < b.weekStart ? 1 : -1));
+  holders.sort((a, b) => b.streak - a.streak);
+  return { holders, weekStart };
+}
+
+/**
+ * Every spoon reign in league history, newest first — the Cellar,
+ * mirror of the Hall of Kings. A reign is one athlete's run of
+ * consecutive last-place finishes:
+ * [{ athlete, weeks, fromWeek, toWeek, title, current }].
+ * `title` is the shame title the streak PEAKED at; `current` marks
+ * the reign still being served this week.
+ */
+export function hallOfCellar(sessions, athletes, asOf = todayStr()) {
+  const chain = weeklyChain(sessions, athletes, asOf, []);
+  const reigns = [];
+  const open = {}; // athleteId -> cellar segment in progress
+  for (const wk of chain) {
+    const lastIds = new Set(wk.lastPlace.map((a) => a.id));
+    for (const a of athletes) {
+      if (lastIds.has(a.id)) {
+        if (!open[a.id])
+          open[a.id] = { athlete: a, weeks: 0, fromWeek: wk.weekStart, toWeek: wk.weekStart };
+        open[a.id].weeks += 1;
+        open[a.id].toWeek = wk.weekStart;
+      } else if (open[a.id]) {
+        reigns.push(open[a.id]);
+        delete open[a.id];
+      }
+    }
+  }
+  for (const a of athletes) if (open[a.id]) reigns.push(open[a.id]);
+  const raceWeeks = chain.filter((w) => w.hasRace);
+  const lastRaceWeek = raceWeeks.length ? raceWeeks[raceWeeks.length - 1] : null;
+  const currentIds = new Set(lastRaceWeek ? lastRaceWeek.lastPlace.map((a) => a.id) : []);
+  return reigns
+    .map((r) => ({
+      ...r,
+      title: spoonTitleForStreak(r.weeks),
+      current:
+        currentIds.has(r.athlete.id) && !!lastRaceWeek && r.toWeek === lastRaceWeek.weekStart,
+    }))
+    .sort((a, b) => (a.toWeek < b.toWeek ? 1 : a.toWeek > b.toWeek ? -1 : b.weeks - a.weeks));
 }
 
 /**
@@ -539,13 +732,20 @@ export function weeklyRecap(sessions, athletes, asOf = todayStr(), flags = []) {
   const { weekStart, weekEnd } = latest;
   const athleteById = new Map((athletes || []).map((a) => [a.id, a]));
   const winnerIds = new Set(latest.winners.map((a) => a.id));
+  const adjustedById = new Map((latest.rows || []).map((r) => [r.athlete.id, r]));
   const standings = weeklyStandings(sessions, athletes, weekStart)
-    .map((r) => ({
-      athlete: r.athlete,
-      points: r.points,
-      sessions: r.sessions,
-      isWinner: winnerIds.has(r.athlete.id),
-    }))
+    .map((r) => {
+      const adj = adjustedById.get(r.athlete.id);
+      return {
+        athlete: r.athlete,
+        points: r.points,
+        adjustedPoints: adj ? adj.points : r.points,
+        taxFactor: adj ? adj.taxFactor : 1.0,
+        boostFactor: adj ? adj.boostFactor : 1.0,
+        sessions: r.sessions,
+        isWinner: winnerIds.has(r.athlete.id),
+      };
+    })
     .sort((a, b) => b.isWinner - a.isWinner || b.points - a.points);
   const inWeek = (sessions || []).filter(
     (s) => s.date >= weekStart && s.date <= weekEnd
@@ -576,6 +776,36 @@ export function weeklyRecap(sessions, athletes, asOf = todayStr(), flags = []) {
       if (f.sessionAthleteId) flaggedIds.add(f.sessionAthleteId);
     }
   }
+  // King's Bounty (Casey, Nov 16, 2026): the king who SAT during the
+  // recapped week is the previous week's winner. Any non-king whose
+  // biggest session of the week beat the king's biggest session of
+  // the week claimed the bounty. No king on the throne that week —
+  // or a king who never showed — means no bounty to claim.
+  const sittingKings = history.length > 1 ? history[1].winners : [];
+  let bounty = [];
+  if (sittingKings.length > 0) {
+    const kingIds = new Set(sittingKings.map((a) => a.id));
+    const bestByAthlete = new Map();
+    for (const s of inWeek) {
+      const cur = bestByAthlete.get(s.athleteId);
+      if (!cur || (Number(s.points) || 0) > (Number(cur.points) || 0))
+        bestByAthlete.set(s.athleteId, s);
+    }
+    let kingBest = 0;
+    for (const k of sittingKings)
+      kingBest = Math.max(kingBest, Number(bestByAthlete.get(k.id)?.points) || 0);
+    if (kingBest > 0) {
+      bounty = [...bestByAthlete.entries()]
+        .filter(([id, s]) => !kingIds.has(id) && (Number(s.points) || 0) > kingBest)
+        .map(([id, s]) => ({
+          athlete: athleteById.get(id) || null,
+          session: s,
+          points: Number(s.points) || 0,
+          kingBest,
+        }))
+        .sort((a, b) => b.points - a.points);
+    }
+  }
   const throne = currentThrone(sessions, athletes, asOf, flags);
   return {
     weekStart,
@@ -603,25 +833,80 @@ export function weeklyRecap(sessions, athletes, asOf = todayStr(), flags = []) {
       title: h.title,
       taxFactor: h.taxFactor,
     })),
+    // The week's spoon result: who finished last, their streak after
+    // the week, and the shame title it earned them.
+    spoon: latest.lastPlace || [],
+    // King's Bounty claimants (see above): [{ athlete, session, points, kingBest }].
+    bounty,
   };
 }
 
 /**
  * The current week's race standings with the dynasty tax applied to the
- * reigning holder(s): rows carry the taxed `points` (ranked on it),
- * plus `rawPoints` and `taxFactor` so the UI can show the tax openly.
- * Non-holders pass through at ×1.00.
+ * reigning holder(s) and the spoon boost applied to the spoon holder
+ * (when their boost is armed): rows carry the adjusted `points`
+ * (ranked on it), plus `rawPoints`, `taxFactor` and `boostFactor` so
+ * the UI can show both multipliers openly. Everyone else passes
+ * through at ×1.00. Pass `spoon` (from currentSpoon) to arm the boost;
+ * without it, behaviour is exactly the pre-spoon tax-only race.
  */
-export function taxedWeeklyStandings(sessions, athletes, weekStartStr, throne) {
+export function taxedWeeklyStandings(sessions, athletes, weekStartStr, throne, spoon = null) {
   const rows = weeklyStandings(sessions, athletes, weekStartStr);
   const factorById = {};
   for (const h of throne?.holders || []) factorById[h.athlete.id] = h.taxFactor;
+  const boostById = {};
+  for (const h of spoon?.holders || [])
+    if (h.boostActive) boostById[h.athlete.id] = h.boostFactor;
   const taxed = rows.map((r) => {
     const f = factorById[r.athlete.id] ?? 1.0;
-    return { ...r, rawPoints: r.points, taxFactor: f, points: round1(r.points * f) };
+    const b = boostById[r.athlete.id] ?? 1.0;
+    return {
+      ...r,
+      rawPoints: r.points,
+      taxFactor: f,
+      boostFactor: b,
+      points: round1(r.points * f * b),
+    };
   });
   taxed.sort((x, y) => y.points - x.points);
   return taxed.map((r, i) => ({ ...r, rank: i + 1 }));
+}
+
+/**
+ * The King's grip on the Throne this week (Casey, Nov 16, 2026): for
+ * each sitting holder, their adjusted weekly-race points against the
+ * nearest challenger's, as a percentage — plus `bleeding`, true when
+ * the challenger is currently AHEAD, i.e. the king is losing the
+ * in-progress week. Returns one entry per holder (usually one), or
+ * null when nobody holds the Throne.
+ * [{ holder, kingPoints, challenger, challengerPoints, gripPct, bleeding }]
+ */
+export function throneGrip(sessions, athletes, asOf = todayStr(), flags = []) {
+  const throne = currentThrone(sessions, athletes, asOf, flags);
+  if (!throne) return null;
+  const spoon = currentSpoon(sessions, athletes, asOf);
+  const rows = taxedWeeklyStandings(sessions, athletes, mondayOf(asOf), throne, spoon);
+  const holderIds = new Set(throne.holders.map((h) => h.athlete.id));
+  const challengerRow = rows.find((r) => !holderIds.has(r.athlete.id)) || null;
+  return throne.holders.map((h) => {
+    const kingRow = rows.find((r) => r.athlete.id === h.athlete.id);
+    const kingPoints = kingRow ? kingRow.points : 0;
+    const challengerPoints = challengerRow ? challengerRow.points : 0;
+    const gripPct =
+      kingPoints > 0
+        ? Math.round((challengerPoints / kingPoints) * 100)
+        : challengerPoints > 0
+          ? 100
+          : 0;
+    return {
+      holder: h,
+      kingPoints,
+      challenger: challengerRow ? challengerRow.athlete : null,
+      challengerPoints,
+      gripPct,
+      bleeding: challengerPoints > kingPoints,
+    };
+  });
 }
 
 /** All-time per-sport totals for one athlete: { sport: {points, sessions, minutes} }. */
@@ -828,6 +1113,133 @@ export function pointsForSession(sessionFields, athlete, handicap) {
       handicap,
     }),
     load: null,
+  };
+}
+
+/* ---------------- the Score Receipt (Casey, Nov 16, 2026) ---------------- */
+
+const LOAD_SOURCE_LABELS = {
+  tss: "Power TSS",
+  hrtss: "Heart-rate TSS (hrTSS)",
+  strava: "Strava Relative Effort",
+  est: "Coach estimate",
+  legacy: "Legacy scoring (pre-Load)",
+};
+
+/**
+ * The Score Receipt: how one stored session's points were computed,
+ * rebuilt from the fields stored on the session — the load source, the
+ * inputs that fed it, any duration discount, the handicap and the
+ * final points. Display only: it never re-prices anything (stored
+ * points are the record; the receipt explains them). Sessions from
+ * before the Load era carry no stored Load — when their stored inputs
+ * still price a Load the receipt says so ("recomputed for display");
+ * otherwise it shows the legacy minutes × difficulty × handicap math
+ * they were actually scored with.
+ * Returns { source, sourceLabel, lines: [{label, value}], formula,
+ *           load, discount: {factor, kneeMin} | null, handicap, points,
+ *           recomputed }.
+ */
+export function scoreReceipt(session, athlete) {
+  if (!session) return null;
+  const minutes = Number(session.minutes) || 0;
+  const hours = minutes / 60;
+  const difficulty = clampDifficulty(session.difficulty ?? 1.0);
+  const handicap =
+    session.handicapUsed != null
+      ? Number(session.handicapUsed)
+      : handicapAt(athlete, session.date);
+  const points = Number(session.points) || 0;
+  const lines = [{ label: "Duration", value: `${minutes} min` }];
+  let storedLoad =
+    session.load != null && Number(session.load) > 0
+      ? Math.round(Number(session.load))
+      : null;
+  let source = storedLoad != null ? session.loadSource || "est" : null;
+  let recomputed = false;
+  if (storedLoad == null) {
+    const hasPerf =
+      session.avgHr != null ||
+      session.avgPowerW != null ||
+      session.npW != null ||
+      session.relativeEffort != null;
+    const computed = hasPerf ? computeLoad(session, athlete) : null;
+    if (computed) {
+      storedLoad = computed.value;
+      source = computed.source;
+      recomputed = true;
+    }
+  }
+  if (storedLoad == null) {
+    lines.push({ label: "Difficulty", value: difficulty.toFixed(1) });
+    return {
+      source: "legacy",
+      sourceLabel: LOAD_SOURCE_LABELS.legacy,
+      lines,
+      formula: "points = minutes × difficulty × handicap",
+      load: null,
+      discount: null,
+      handicap,
+      points,
+      recomputed: false,
+    };
+  }
+  let formula = "";
+  let discount = null;
+  const curve = DURATION_CURVES[session.sport];
+  if (source === "tss") {
+    const np = Number(session.npW) || 0;
+    const power = np > 0 ? np : Number(session.avgPowerW) || 0;
+    const ftp = Number(session.ftpW ?? athlete?.ftpW) || 0;
+    lines.push({
+      label: np > 0 ? "Normalized power" : "Average power",
+      value: power > 0 ? `${Math.round(power)} W` : "—",
+    });
+    lines.push({ label: "FTP", value: ftp > 0 ? `${Math.round(ftp)} W` : "—" });
+    formula = "TSS = hours × (power ÷ FTP)² × 100 — cycling is never duration-discounted";
+  } else if (source === "hrtss") {
+    const avgHr = Number(session.avgHr) || 0;
+    const thr = Number(session.thresholdHr ?? athlete?.thresholdHr) || 0;
+    lines.push({ label: "Average HR", value: avgHr > 0 ? `${Math.round(avgHr)} bpm` : "—" });
+    lines.push({ label: "Threshold HR", value: thr > 0 ? `${Math.round(thr)} bpm` : "—" });
+    if (avgHr > 0 && thr > 0) {
+      const raw = hours * (avgHr / thr) * (avgHr / thr) * 100;
+      lines.push({ label: "Raw hrTSS", value: String(Math.round(raw)) });
+    }
+    const f = durationFactor(session.sport, minutes);
+    if (f < 1 && curve) discount = { factor: round2(f), kneeMin: curve.kneeMin };
+    formula = "hrTSS = hours × (avg HR ÷ threshold HR)² × 100";
+  } else if (source === "strava") {
+    lines.push({
+      label: "Relative Effort",
+      value: session.relativeEffort != null ? String(Math.round(Number(session.relativeEffort))) : "—",
+    });
+    const f = durationFactor(session.sport, minutes);
+    if (f < 1 && curve) discount = { factor: round2(f), kneeMin: curve.kneeMin };
+    formula = "Load = Strava's Relative Effort (suffer score)";
+  } else {
+    // est — the coach's estimate prices the session.
+    lines.push({ label: "Difficulty", value: difficulty.toFixed(1) });
+    if (session.sport === "hiking" && Number(session.elevationGainM) > 0)
+      lines.push({
+        label: "Elevation bonus",
+        value: `+${Math.round(Number(session.elevationGainM) / 10)} min (${session.elevationGainM} m climbed)`,
+      });
+    formula = ESTIMATED_LOAD_SPORTS.includes(session.sport)
+      ? "Load = minutes × difficulty — this sport is always estimate-priced (HR can't see muscular load)"
+      : "Load = minutes × difficulty (no measured load was stored)";
+  }
+  lines.push({ label: "Load", value: String(storedLoad) });
+  return {
+    source,
+    sourceLabel: LOAD_SOURCE_LABELS[source] || source,
+    lines,
+    formula,
+    load: storedLoad,
+    discount,
+    handicap,
+    points,
+    recomputed,
   };
 }
 
