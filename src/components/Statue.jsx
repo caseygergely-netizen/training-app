@@ -1,4 +1,8 @@
-import { statueUrlFor, statueMaterialFor } from "../lib/statues.js";
+import {
+  statueUrlFor,
+  sadStatueUrlFor,
+  statueMaterialFor,
+} from "../lib/statues.js";
 
 /**
  * The Throne statue (Casey, Nov 16, 2026): the holder's generated
@@ -19,24 +23,31 @@ export default function Statue({
   variant = "card",
   className = "",
   overlay = null,
+  sad = false,
 }) {
-  const url = statueUrlFor(athlete);
+  const url = sad ? sadStatueUrlFor(athlete) : statueUrlFor(athlete);
   if (!url) return null;
   const tier = Math.max(1, Math.min(5, Number(reign) || 1));
   return (
     <figure
-      className={`statue statue-${variant} statue-t${tier}${className ? ` ${className}` : ""}`}
+      className={`statue statue-${variant} ${sad ? "statue-sad" : `statue-t${tier}`}${className ? ` ${className}` : ""}`}
     >
       <img
         src={url}
-        alt={`Statue of ${athlete?.name || "the champion"}`}
+        alt={
+          sad
+            ? `Sad statue of ${athlete?.name || "the spoon holder"}`
+            : `Statue of ${athlete?.name || "the champion"}`
+        }
         draggable={false}
         loading="lazy"
       />
       {overlay ? (
         <div className="statue-overlay">{overlay}</div>
       ) : (
-        <figcaption>{statueMaterialFor(tier)} statue</figcaption>
+        <figcaption>
+          {sad ? "🥄 Pathetic statue" : `${statueMaterialFor(tier)} statue`}
+        </figcaption>
       )}
     </figure>
   );

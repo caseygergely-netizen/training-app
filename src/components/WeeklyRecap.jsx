@@ -96,20 +96,32 @@ export default function WeeklyRecap({ recap, onClose, achievements = [] }) {
               }.`}
         </p>
         {recap.spoon && recap.spoon.length > 0 && (
-          <p className="small" style={{ marginTop: 6 }}>
-            🥄 <strong>The Spoon:</strong>{" "}
-            {recap.spoon
-              .map(
-                (s) =>
-                  `${s.athlete.name} — ${s.title}, week ${s.streak} of the streak${
-                    s.streak >= 2
-                      ? " — the ×1.10 spoon boost is armed for this week"
-                      : ""
-                  }`
-              )
-              .join("; ")}
-            .
-          </p>
+          <div
+            style={{
+              display: "flex",
+              gap: 10,
+              alignItems: "flex-start",
+              marginTop: 8,
+            }}
+          >
+            <div style={{ flexShrink: 0 }}>
+              <Statue athlete={recap.spoon[0].athlete} variant="hall" sad />
+            </div>
+            <p className="small" style={{ margin: 0 }}>
+              🥄 <strong>The Spoon:</strong>{" "}
+              {recap.spoon
+                .map(
+                  (s) =>
+                    `${s.athlete.name} — ${s.title}, week ${s.streak} of the streak${
+                      s.streak >= 2
+                        ? " — the ×1.10 spoon boost is armed for this week"
+                        : ""
+                    }`
+                )
+                .join("; ")}
+              .
+            </p>
+          </div>
         )}
         {recap.bounty && recap.bounty.length > 0 && (
           <div className="small" style={{ marginTop: 6 }}>

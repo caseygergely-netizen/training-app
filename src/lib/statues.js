@@ -33,6 +33,37 @@ export function statueUrlFor(athlete) {
   );
 }
 
+/**
+ * The sad statues (Casey, Nov 17, 2026): a pathetic, dejected
+ * version of each athlete's trophy statue, generated the same day.
+ * Shown wherever shame is displayed — the Cellar on the Dashboard
+ * and the Spoon line in the Monday recap — never for a reign.
+ */
+const SAD_STATUE_BY_ATHLETE_ID = {
+  "jnvRd5FdaXM8PRHGKY8GJJCG9Cs1": "/statues/casey-sad.webp",
+  "iMPdZlvQjoWVwrPcAvTCsmm2PQC2": "/statues/pat-sad.webp",
+  "MxXK68G3gsUjWiqrM9FYJesIrs52": "/statues/braeden-sad.webp",
+  "ey5MXHvO45Ubc4SLEFtsBFjHc1k2": "/statues/graham-sad.webp",
+};
+
+const SAD_STATUE_BY_NAME = {
+  "Casey Gergely": "/statues/casey-sad.webp",
+  "Pat Edwards": "/statues/pat-sad.webp",
+  "Patrick Boreskie": "/statues/pat-sad.webp",
+  "Braeden Taylor": "/statues/braeden-sad.webp",
+  "Graham O’Bray": "/statues/graham-sad.webp",
+};
+
+/** Bundled sad-statue portrait URL for an athlete, or null. */
+export function sadStatueUrlFor(athlete) {
+  if (!athlete) return null;
+  return (
+    SAD_STATUE_BY_ATHLETE_ID[athlete.id] ||
+    SAD_STATUE_BY_NAME[athlete.name] ||
+    null
+  );
+}
+
 export const STATUE_MATERIALS = [
   "Bronze",
   "Silver",

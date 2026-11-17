@@ -26,7 +26,11 @@ import RaceLane, { LANE_COLORS } from "../components/RaceLane.jsx";
 import Avatar from "../components/Avatar.jsx";
 import Statue from "../components/Statue.jsx";
 import WeeklyRecap from "../components/WeeklyRecap.jsx";
-import { statueUrlFor, statueMaterialFor } from "../lib/statues.js";
+import {
+  statueUrlFor,
+  sadStatueUrlFor,
+  statueMaterialFor,
+} from "../lib/statues.js";
 import { Fragment, useState } from "react";
 
 function TrendArrow({ delta, prior }) {
@@ -430,7 +434,11 @@ export default function Dashboard() {
                           className={`hall-king cellar${r.current ? " current" : ""}`}
                           key={`${r.athlete.id}-${r.fromWeek}`}
                         >
-                          <Avatar athlete={r.athlete} size={44} />
+                          {sadStatueUrlFor(r.athlete) ? (
+                            <Statue athlete={r.athlete} variant="hall" sad />
+                          ) : (
+                            <Avatar athlete={r.athlete} size={44} />
+                          )}
                           <div className="hk-name">{r.athlete.name}</div>
                           <div className="hk-meta">
                             {r.weeks}-week streak

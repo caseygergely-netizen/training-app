@@ -444,6 +444,10 @@ pre.code {
 .statue-recap { height: 300px; margin-top: 10px; }
 .statue-hall { height: 96px; margin: 0; border-radius: 10px; }
 .statue-hall figcaption { display: none; }
+/* Sad statues (Nov 17, 2026): the shame variant — dull and dimmed,
+   no material escalation, grey border of defeat. */
+.statue-sad { border-color: #44403c; }
+.statue-sad img { filter: saturate(0.5) brightness(0.82) contrast(1.02); }
 .statue-t1 { border-color: #5a4028; }
 .statue-t1 img { filter: sepia(0.55) saturate(0.75) hue-rotate(-10deg) brightness(0.82) contrast(1.05); }
 .statue-t2 { border-color: #6b7280; }
