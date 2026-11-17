@@ -31,13 +31,17 @@ export const LANE_COLORS = [
  * leader; `rankTitle` appends a court title ("The Heir" / "The
  * Pretender" / a spoon title) beside the name on weekly lanes.
  * `boardId` (optional) enables the entrance animation (Casey, Nov 16,
- * 2026): the lane remembers each athlete's points in localStorage and,
- * on mount, starts the avatar at its last-seen position and glides it
- * to the current one — you watch the ground gained since your last
- * visit, with a glow on lanes that moved. Last-seen positions are
- * mapped through the CURRENT leader's points (an approximation that's
- * visually honest). First-ever visit starts everyone at the gate.
- * Reduced-motion users skip the glide entirely.
+ * 2026): the lane remembers each athlete's points in localStorage and
+ * starts the avatar at its last-seen position, gliding it to the
+ * current one — you watch the ground gained since your last visit,
+ * with a glow on lanes that moved. The glide waits until the lane
+ * has actually scrolled into view (Nov 17, 2026: the boards sit
+ * below the Throne hero, so a mount-time glide played unseen), and
+ * the new position is only remembered once that glide has played —
+ * an unseen visit never consumes the animation. Last-seen positions
+ * are mapped through the CURRENT leader's points (an approximation
+ * that's visually honest). First-ever visit starts everyone at the
+ * gate. Reduced-motion users skip the glide entirely.
  */
 export default function RaceLane({
   row,
@@ -58,6 +62,7 @@ export default function RaceLane({
   const [shownPct, setShownPct] = useState(null);
   const [moved, setMoved] = useState(false);
   const startedRef = useRef(false);
+  const laneRef = useRef(null);
 
   useEffect(() => {
     if (startedRef.current) return;
@@ -83,40 +88,58 @@ export default function RaceLane({
     const reduced =
       typeof window !== "undefined" &&
       window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-    if (
-      prev == null ||
-      reduced ||
-      topPoints <= 0 ||
-      Number(prev) === Number(row.points)
-    ) {
-      // No history: start at the gate for the very first visit, then
-      // remember where everyone stood.
-      if (prev == null && !reduced && topPoints > 0 && row.points > 0) {
-        setShownPct(4);
-        const t = setTimeout(() => setShownPct(null), 80);
-        const p = setTimeout(persist, 1600);
-        return () => {
-          clearTimeout(t);
-          clearTimeout(p);
-        };
+    // Is there a glide worth watching? Anything without one (no
+    // history worth animating, reduced motion, no movement) just
+    // persists immediately, as before.
+    let fromPct = null;
+    let glow = false;
+    if (prev == null) {
+      // First-ever visit: start at the gate.
+      if (!reduced && topPoints > 0 && row.points > 0) fromPct = 4;
+    } else if (!reduced && topPoints > 0 && Number(prev) !== Number(row.points)) {
+      const prevPct = Math.max(4, Math.min(92, 4 + (Number(prev) / topPoints) * 88));
+      if (Math.abs(prevPct - pct) > 0.5) {
+        fromPct = prevPct;
+        glow = true;
       }
+    }
+    if (fromPct == null) {
       persist();
       return undefined;
     }
-    const prevPct = Math.max(4, Math.min(92, 4 + (Number(prev) / topPoints) * 88));
-    if (Math.abs(prevPct - pct) <= 0.5) {
-      persist();
-      return undefined;
+    // Hold the avatar at its last-seen position until the lane is
+    // actually on screen, then glide — and only persist the new
+    // position once that glide has played (Casey, Nov 17, 2026).
+    setShownPct(fromPct);
+    const timers = [];
+    let observer = null;
+    let begun = false;
+    const begin = () => {
+      if (begun) return;
+      begun = true;
+      if (glow) setMoved(true);
+      timers.push(setTimeout(() => setShownPct(null), 80));
+      if (glow) timers.push(setTimeout(() => setMoved(false), 2600));
+      timers.push(setTimeout(persist, 1600));
+    };
+    const el = laneRef.current;
+    if (el && typeof IntersectionObserver !== "undefined") {
+      observer = new IntersectionObserver(
+        (entries) => {
+          if (entries.some((e) => e.isIntersecting)) {
+            begin();
+            observer.disconnect();
+          }
+        },
+        { threshold: 0.15 }
+      );
+      observer.observe(el);
+    } else {
+      begin();
     }
-    setShownPct(prevPct);
-    setMoved(true);
-    const t1 = setTimeout(() => setShownPct(null), 80);
-    const t2 = setTimeout(() => setMoved(false), 2600);
-    const t3 = setTimeout(persist, 1600);
     return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-      clearTimeout(t3);
+      observer?.disconnect();
+      timers.forEach(clearTimeout);
     };
     // Mount-only by design: the glide replays the delta since the
     // last visit, it does not track live updates.
@@ -126,6 +149,7 @@ export default function RaceLane({
   const effPct = shownPct != null ? shownPct : pct;
   return (
     <div
+      ref={laneRef}
       className={`race-lane${isLeader ? " leader" : ""}${moved ? " lane-moved" : ""}`}
       style={{ "--lane": color }}
     >
