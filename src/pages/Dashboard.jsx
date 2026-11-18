@@ -26,11 +26,7 @@ import RaceLane, { LANE_COLORS } from "../components/RaceLane.jsx";
 import Avatar from "../components/Avatar.jsx";
 import Statue from "../components/Statue.jsx";
 import WeeklyRecap from "../components/WeeklyRecap.jsx";
-import {
-  statueUrlFor,
-  sadStatueUrlFor,
-  statueMaterialFor,
-} from "../lib/statues.js";
+import { statueUrlFor, sadStatueUrlFor } from "../lib/statues.js";
 import { Fragment, useState } from "react";
 
 function TrendArrow({ delta, prior }) {
@@ -217,8 +213,7 @@ export default function Dashboard() {
                           <div className="throne-name">{h.athlete.name}</div>
                           <div className="throne-title">
                             👑 {h.title} · reign of {h.reignWeeks} week
-                            {h.reignWeeks === 1 ? "" : "s"} ·{" "}
-                            {statueMaterialFor(h.reignWeeks)} statue
+                            {h.reignWeeks === 1 ? "" : "s"}
                           </div>
                           <div className="small" style={{ color: "#d8deea" }}>
                             Won the week of {prettyDate(throne.weekStart)} —

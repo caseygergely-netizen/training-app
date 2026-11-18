@@ -1,8 +1,4 @@
-import {
-  statueTierUrlFor,
-  statueMaterialFor,
-  statueLossNameFor,
-} from "../lib/statues.js";
+import { statueTierUrlFor } from "../lib/statues.js";
 
 /**
  * The tiered statue (Casey, Nov 16–17, 2026): each athlete has a
@@ -52,15 +48,9 @@ export default function Statue({
         draggable={false}
         loading="lazy"
       />
-      {overlay ? (
-        <div className="statue-overlay">{overlay}</div>
-      ) : (
-        <figcaption>
-          {loss
-            ? `🥄 ${statueLossNameFor(tier)} statue`
-            : `${statueMaterialFor(tier)} statue`}
-        </figcaption>
-      )}
+      {/* No material caption (Casey, Nov 17, 2026): nobody needs a
+          label telling them it's a gold statue — the picture says it. */}
+      {overlay ? <div className="statue-overlay">{overlay}</div> : null}
     </figure>
   );
 }
