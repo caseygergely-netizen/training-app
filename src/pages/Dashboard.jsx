@@ -435,7 +435,7 @@ export default function Dashboard() {
                           key={`${r.athlete.id}-${r.fromWeek}`}
                         >
                           {sadStatueUrlFor(r.athlete) ? (
-                            <Statue athlete={r.athlete} variant="hall" sad />
+                            <Statue athlete={r.athlete} variant="hall" spoonStreak={r.weeks} />
                           ) : (
                             <Avatar athlete={r.athlete} size={44} />
                           )}

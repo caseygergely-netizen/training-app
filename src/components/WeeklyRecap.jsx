@@ -105,7 +105,7 @@ export default function WeeklyRecap({ recap, onClose, achievements = [] }) {
             }}
           >
             <div style={{ flexShrink: 0 }}>
-              <Statue athlete={recap.spoon[0].athlete} variant="hall" sad />
+              <Statue athlete={recap.spoon[0].athlete} variant="hall" spoonStreak={recap.spoon[0].streak || 1} />
             </div>
             <p className="small" style={{ margin: 0 }}>
               🥄 <strong>The Spoon:</strong>{" "}

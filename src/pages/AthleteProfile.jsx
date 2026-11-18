@@ -26,6 +26,7 @@ import {
   pointsBySport,
   weeklyWinners,
   currentThrone,
+  currentSpoon,
   SPORTS,
   SPORT_META,
   round1,
@@ -117,6 +118,9 @@ export default function AthleteProfile() {
   const throneNow = currentThrone(sessions, athletes, asOf, flags);
   const myReign =
     throneNow?.holders.find((h) => h.athlete.id === id) || null;
+  const spoonNow = currentSpoon(sessions, athletes, asOf);
+  const mySpoon =
+    spoonNow?.holders.find((h) => h.athlete.id === id) || null;
   // Secret-achievement trophy shelf + recent sessions (Nov 16, 2026).
   const shelf = achievementsForAthlete(sessions, athletes, id, flags, asOf);
   const recentSessions = mine.slice(0, 10);
@@ -201,6 +205,20 @@ export default function AthleteProfile() {
           </p>
           <div style={{ marginBottom: 12 }}>
             <Statue athlete={athlete} reign={myReign.reignWeeks} variant="card" />
+          </div>
+        </>
+      )}
+      {!myReign && mySpoon && (
+        <>
+          <p className="sub" style={{ color: "#a8a29e", fontWeight: 700 }}>
+            🥄 Holding the Spoon — {mySpoon.title} · {mySpoon.streak}{" "}
+            week{mySpoon.streak === 1 ? "" : "s"} at the bottom
+            {mySpoon.boostActive
+              ? ` · the ×${mySpoon.boostFactor.toFixed(2)} spoon boost is armed this week`
+              : ""}
+          </p>
+          <div style={{ marginBottom: 12 }}>
+            <Statue athlete={athlete} spoonStreak={mySpoon.streak} variant="card" />
           </div>
         </>
       )}

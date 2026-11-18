@@ -420,10 +420,12 @@ pre.code {
 .hall-king .hk-meta { font-size: 11px; color: var(--muted); margin-top: 2px; line-height: 1.45; }
 
 
-/* ——— Throne statues (Casey, Nov 16, 2026) ———
-   One gold master portrait per athlete (public/statues/); the
-   material escalates with the reign via filters on the img:
-   t1 bronze · t2 silver · t3 gold · t4 radiant · t5 eternal. */
+/* ——— Tiered statues (Casey, Nov 16–17, 2026) ———
+   A different generated portrait per tier (public/statues/):
+   win t1 gold · t2 bright gold · t3 platinum · t4 radiant gold ·
+   t5 DIAMOND; loss l1 sad gold · l2 tarnished bronze · l3 corroded
+   · l4 cracked clay. The images carry the material — no img
+   filters; only the frame and glow escalate here. */
 .statue {
   position: relative; margin: 12px 0 0; border-radius: 14px;
   overflow: hidden; background: #10141d;
@@ -444,28 +446,26 @@ pre.code {
 .statue-recap { height: 300px; margin-top: 10px; }
 .statue-hall { height: 96px; margin: 0; border-radius: 10px; }
 .statue-hall figcaption { display: none; }
-/* Sad statues (Nov 17, 2026): the shame variant — dull and dimmed,
-   no material escalation, grey border of defeat. */
+/* Loss tiers: the frame decays with the streak. */
 .statue-sad { border-color: #44403c; }
-.statue-sad img { filter: saturate(0.5) brightness(0.82) contrast(1.02); }
-.statue-t1 { border-color: #5a4028; }
-.statue-t1 img { filter: sepia(0.55) saturate(0.75) hue-rotate(-10deg) brightness(0.82) contrast(1.05); }
-.statue-t2 { border-color: #6b7280; }
-.statue-t2 img { filter: grayscale(0.88) brightness(1.07) contrast(1.03); }
-.statue-t3 { border-color: #8a6d1f; }
-.statue-t3 img { filter: saturate(1.06); }
+.statue-l2 { border-color: #4a3421; }
+.statue-l3 { border-color: #2f4f45; }
+.statue-l4 { border-color: #2b2119; }
+.statue-l4 figcaption { color: #c9b8a3; }
+.statue-t1 { border-color: #8a6d1f; }
+.statue-t2 { border-color: #c9a227; }
+.statue-t3 { border-color: #c7ccd6; }
 .statue-t4 {
   border-color: #ffd23f;
   box-shadow: 0 0 0 1px rgba(255, 210, 63, 0.5), 0 0 26px rgba(255, 190, 50, 0.35);
 }
-.statue-t4 img, .statue-t5 img { filter: saturate(1.1); }
 .statue-t5 {
-  border-color: #ffe27a;
+  border-color: #dff3ff;
   animation: statue-pulse 2.8s ease-in-out infinite;
 }
 @keyframes statue-pulse {
-  0%, 100% { box-shadow: 0 0 0 1px rgba(255, 226, 122, 0.7), 0 0 26px rgba(255, 200, 60, 0.4); }
-  50% { box-shadow: 0 0 0 1px rgba(255, 240, 170, 1), 0 0 46px rgba(255, 205, 70, 0.65); }
+  0%, 100% { box-shadow: 0 0 0 1px rgba(190, 230, 255, 0.7), 0 0 26px rgba(160, 215, 255, 0.4); }
+  50% { box-shadow: 0 0 0 1px rgba(235, 250, 255, 1), 0 0 46px rgba(190, 230, 255, 0.65); }
 }
 
 /* ——— Monday weekly recap (Casey, Nov 16, 2026) ——— */
