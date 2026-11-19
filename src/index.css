@@ -645,3 +645,36 @@ pre.code {
   .golden-asterisk, .statue-unveil-ribbon { animation: none; }
   .statue-unveil::after { animation: none; display: none; }
 }
+
+/* ——— The Trophy pedestals (Nov 19, 2026) — ISOLATED DISPLAY BLOCK.
+   Everything Trophy-display lives here + components/TrophyPedestal.jsx
+   + its wiring in Dashboard.jsx / AthleteProfile.jsx. Deleting this
+   block and those pieces reverts the display only; the Trophy scoring
+   in points.js (trophyState, best-12-of-14, best-6-of-7) is untouched. ——— */
+.hero-pedestals.duo {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start;
+}
+.hero-pedestals.duo .statue-hero { height: 340px; }
+@media (max-width: 620px) {
+  .hero-pedestals.duo { grid-template-columns: 1fr; }
+  .hero-pedestals.duo .statue-hero { height: 400px; }
+}
+.trophy-figure {
+  position: relative; margin: 12px 0 0; border-radius: 14px;
+  overflow: hidden; background: #10141d;
+  border: 1px solid #8a6d1f;
+  box-shadow: 0 0 0 1px rgba(242, 193, 78, 0.25), 0 6px 24px rgba(0, 0, 0, 0.35);
+}
+.trophy-figure img {
+  display: block; width: 100%; height: 400px;
+  object-fit: cover; object-position: 50% 50%;
+}
+.hero-pedestals.duo .trophy-figure img { height: 340px; }
+@media (max-width: 620px) {
+  .hero-pedestals.duo .trophy-figure img { height: 400px; }
+}
+.trophy-figure .throne-name { color: #fff; }
+.trophy-profile-img {
+  display: block; width: 100%; max-width: 320px;
+  border-radius: 14px; border: 1px solid #8a6d1f;
+}

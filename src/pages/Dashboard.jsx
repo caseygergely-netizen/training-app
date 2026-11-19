@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { useAthletes, useSessions, useReviewFlags, seedDemoData, clearDemoData } from "../lib/firestore.js";
+import { useAthletes, useSessions, useReviewFlags, useTrophySlot, seedDemoData, clearDemoData } from "../lib/firestore.js";
 import { useAuth } from "../App.jsx";
 import Onboarding from "./Onboarding.jsx";
 import {
@@ -9,6 +9,8 @@ import {
   weeklyWinners,
   quarterlyStandings,
   currentThrone,
+  trophyState,
+  REST_RULES_FROM,
   kingHasFallen,
   hallOfKings,
   hallOfCellar,
@@ -26,6 +28,7 @@ import { achievementUnlocksInWeek } from "../lib/achievements.js";
 import RaceLane, { LANE_COLORS } from "../components/RaceLane.jsx";
 import Avatar from "../components/Avatar.jsx";
 import Statue from "../components/Statue.jsx";
+import TrophyPedestal from "../components/TrophyPedestal.jsx";
 import WeeklyRecap from "../components/WeeklyRecap.jsx";
 import { statueUrlFor, sadStatueUrlFor } from "../lib/statues.js";
 import { Fragment, useState } from "react";
@@ -47,6 +50,7 @@ export default function Dashboard() {
   const { athletes, loading: aLoading } = useAthletes();
   const { sessions, loading: sLoading } = useSessions();
   const { flags } = useReviewFlags();
+  const trophySlot = useTrophySlot();
   const { athlete } = useAuth();
   const [seeding, setSeeding] = useState(false);
   const [seedError, setSeedError] = useState("");
@@ -62,6 +66,31 @@ export default function Dashboard() {
   // hype chips.
   const weekStart = mondayOf(asOf);
   const throne = currentThrone(sessions, athletes, asOf, flags);
+  // The Trophy (Nov 19, 2026): the rolling-board title, displayed
+  // beside the Throne in the hero. A DOUBLE-HOLD (same athlete on
+  // both titles) shows one combined image once the holder's coach
+  // publishes it to the slot — the slot only counts while it still
+  // matches the live standings (athlete, cup level, statue tier).
+  const trophy = trophyState(sessions, athletes, asOf);
+  const doubleHolder =
+    trophy.holders.find((t) =>
+      (throne?.holders || []).some((h) => h.athlete.id === t.athlete.id)
+    ) || null;
+  const doubleReign = doubleHolder
+    ? throne.holders.find((h) => h.athlete.id === doubleHolder.athlete.id)
+    : null;
+  const combinedUrl =
+    doubleHolder &&
+    trophySlot &&
+    trophySlot.url &&
+    trophySlot.athleteId === doubleHolder.athlete.id &&
+    Number(trophySlot.cupLevel) === doubleHolder.level &&
+    Number(trophySlot.statueTier) ===
+      Math.max(1, Math.min(5, doubleReign?.reignWeeks || 1))
+      ? trophySlot.url
+      : null;
+  const pedestalCount =
+    (throne?.holders.length || 0) + trophy.holders.length - (combinedUrl ? 1 : 0);
   const spoon = currentSpoon(sessions, athletes, asOf);
   const grip = throneGrip(sessions, athletes, asOf, flags);
   const bleeding = grip ? grip.find((g) => g.bleeding) : null;
@@ -207,8 +236,17 @@ export default function Dashboard() {
         <>
           {/* ——— 1 · The Throne hero ——— */}
           <div className="card throne-card throne-hero">
+            <div className={`hero-pedestals${pedestalCount >= 2 ? " duo" : ""}`}>
             {throne ? (
-              throne.holders.map((h) => (
+              throne.holders.map((h) =>
+                combinedUrl && doubleHolder && h.athlete.id === doubleHolder.athlete.id ? (
+                  <TrophyPedestal
+                    key={h.athlete.id}
+                    holder={doubleHolder}
+                    combinedUrl={combinedUrl}
+                    throneHolder={h}
+                  />
+                ) : (
                 <Fragment key={h.athlete.id}>
                   {statueUrlFor(h.athlete) ? (
                     <Statue
@@ -256,13 +294,25 @@ export default function Dashboard() {
                     </div>
                   )}
                 </Fragment>
-              ))
-            ) : (
+                )
+              )
+            ) : trophy.holders.length === 0 ? (
               <p className="small muted" style={{ margin: 6 }}>
                 The throne sits empty. Win a weekly race to take it — then
                 defend it, if you can.
               </p>
-            )}
+            ) : null}
+            {!combinedUrl &&
+              trophy.holders.map((t) => (
+                <TrophyPedestal key={t.athlete.id} holder={t} />
+              ))}
+            </div>
+            {!throne && trophy.holders.length > 0 ? (
+              <p className="small muted" style={{ margin: 6 }}>
+                The throne sits empty. Win a weekly race to take it — then
+                defend it, if you can.
+              </p>
+            ) : null}
             {grip &&
               grip.map((g) =>
                 g.challenger ? (
@@ -356,6 +406,9 @@ export default function Dashboard() {
                     spoon.holders.filter((h) => h.boostActive).length === 1 ? "s" : ""
                   } with the spoon boost at ×1.10`
                 : ""}{" "}
+              {weekStart >= REST_RULES_FROM
+                ? "Best 6 of 7 days count — a rest day is free. "
+                : ""}
               — past winners below.
             </p>
             {weekRows.length > 0 && (
@@ -405,6 +458,12 @@ export default function Dashboard() {
               </Link>
             ))}
           </div>
+          {asOf >= REST_RULES_FROM && (
+            <p className="small muted" style={{ marginTop: 6 }}>
+              Best 12 of your 14 days count — two rest days are free. Lead
+              this board to hold the Trophy 🏆.
+            </p>
+          )}
 
           {/* ——— 4 · Season race ——— */}
           <h1 style={{ fontSize: 18, marginTop: 18 }}>📅 Season race — {quarter.label}</h1>

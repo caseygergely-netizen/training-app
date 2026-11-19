@@ -156,6 +156,18 @@ service cloud.firestore {
     // register itself, and only against a link code that IT redeemed and
     // whose athlete/coach name match what it claims. After that, the bot
     // or its athlete can only flip the `active` flag (revoke/restore).
+    // App state: the Trophy combined-image slot lives here
+    // (appState/trophyCombined — { url, athleteId, cupLevel,
+    // statueTier }). Anyone signed in can read it; only a linked,
+    // active coach bot can write it (the coaches publish the
+    // combined statue+trophy image when their athlete holds both
+    // titles — see points.js, the Trophy). The app validates the
+    // slot against live standings before displaying it.
+    match /appState/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isCoachBot();
+    }
+
     match /coachBots/{botUid} {
       allow read: if isSignedIn();
       allow create: if isSignedIn()

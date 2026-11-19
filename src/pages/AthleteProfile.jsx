@@ -27,12 +27,14 @@ import {
   weeklyWinners,
   currentThrone,
   currentSpoon,
+  trophyState,
   SPORTS,
   SPORT_META,
   round1,
 } from "../lib/points.js";
 import Avatar from "../components/Avatar.jsx";
 import Statue from "../components/Statue.jsx";
+import { trophyCupUrlFor } from "../lib/statues.js";
 import ScoreReceipt from "../components/ScoreReceipt.jsx";
 import { achievementsForAthlete } from "../lib/achievements.js";
 import { useEffect, useState } from "react";
@@ -121,6 +123,10 @@ export default function AthleteProfile() {
   const spoonNow = currentSpoon(sessions, athletes, asOf);
   const mySpoon =
     spoonNow?.holders.find((h) => h.athlete.id === id) || null;
+  const trophyNow = trophyState(sessions, athletes, asOf);
+  const myTrophy =
+    trophyNow.holders.find((h) => h.athlete.id === id) || null;
+  const myTrophyCareer = trophyNow.careerByAthlete[id] || 0;
   // Secret-achievement trophy shelf + recent sessions (Nov 16, 2026).
   const shelf = achievementsForAthlete(sessions, athletes, id, flags, asOf);
   const recentSessions = mine.slice(0, 10);
@@ -222,6 +228,22 @@ export default function AthleteProfile() {
           </div>
         </>
       )}
+      {myTrophy && (
+        <>
+          <p className="sub" style={{ color: "#f2c14e", fontWeight: 700 }}>
+            🏆 Holds the Trophy — day {myTrophy.days} · Level {myTrophy.level}{" "}
+            cup
+          </p>
+          <div style={{ marginBottom: 12 }}>
+            <img
+              className="trophy-profile-img"
+              src={trophyCupUrlFor(athlete, myTrophy.level)}
+              alt={`The Trophy, Level ${myTrophy.level}`}
+              loading="lazy"
+            />
+          </div>
+        </>
+      )}
 
       <div className="badges" style={{ marginBottom: 12 }}>
         <div className="badge">
@@ -236,6 +258,12 @@ export default function AthleteProfile() {
           <div className="t">Minutes · 14d</div>
           <div className="v" style={{ fontSize: 18 }}>{totalMinutes}</div>
         </div>
+        {myTrophyCareer > 0 && (
+          <div className="badge">
+            <div className="t">Trophy days · career</div>
+            <div className="v" style={{ fontSize: 18 }}>{myTrophyCareer}</div>
+          </div>
+        )}
       </div>
 
       <div className="card">

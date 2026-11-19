@@ -722,3 +722,26 @@ export function useMyAthlete(uid) {
   }, [uid]);
   return { athlete, loading };
 }
+
+/**
+ * The Trophy combined-image slot (Casey, Nov 19, 2026): when one
+ * athlete holds BOTH the Throne and the Trophy, their coach writes
+ * a combined statue-holding-trophy image (Firebase Storage) and
+ * points this doc at it — { url, athleteId, cupLevel, statueTier }.
+ * The app reads it live and only displays it while it still matches
+ * the current standings, so a stale slot can never show the wrong
+ * picture. Null when no double-hold image is published.
+ */
+export function useTrophySlot() {
+  const [slot, setSlot] = useState(null);
+  useEffect(() => {
+    if (!isConfigured) return;
+    const unsub = onSnapshot(
+      doc(db, "appState", "trophyCombined"),
+      (snap) => setSlot(snap.exists() ? { id: snap.id, ...snap.data() } : null),
+      () => setSlot(null)
+    );
+    return unsub;
+  }, []);
+  return slot;
+}

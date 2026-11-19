@@ -66,6 +66,22 @@ export function statueUrlFor(athlete) {
   return statueTierUrlFor(athlete, "win", 1);
 }
 
+/**
+ * Trophy cups (Casey, Nov 18–19, 2026): the rolling-title cups in
+ * public/trophies/, one per athlete per level (L1–L10) — the
+ * holder's face engraved on the cup, escalating in absurdity every
+ * level. Generated Nov 18, 2026 (masters in statue-assets/trophy-cups/).
+ */
+export const TROPHY_CUP_MAX_LEVEL = 10;
+
+/** Trophy cup URL for an athlete at a cup level (1..10, clamped). */
+export function trophyCupUrlFor(athlete, level) {
+  const slug = statueSlugFor(athlete);
+  if (!slug) return null;
+  const t = Math.max(1, Math.min(TROPHY_CUP_MAX_LEVEL, Number(level) || 1));
+  return `/trophies/${slug}-l${t}.webp`;
+}
+
 /** The base sad statue (loss tier 1). */
 export function sadStatueUrlFor(athlete) {
   return statueTierUrlFor(athlete, "loss", 1);

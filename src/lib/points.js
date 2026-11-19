@@ -164,25 +164,52 @@ function sumPoints(list) {
   return round1(list.reduce((t, s) => t + (Number(s.points) || 0), 0));
 }
 
+/**
+ * Rest-day protection (Casey, Nov 19, 2026): from this date, the
+ * rolling board counts each athlete's best 12 of 14 days and the
+ * weekly race counts the best 6 of 7 — rest days stop costing
+ * points. FORWARD-ONLY: weeks and windows before this date keep
+ * their recorded math, so past winners, reigns and the Hall never
+ * move. Session points themselves never rewrite under any rule.
+ */
+export const REST_RULES_FROM = "2026-11-23";
+
+/** Sum of an athlete's best `keep` daily point totals in [startStr, endStr]. */
+function bestDaysSum(sessions, athleteId, startStr, endStr, keep) {
+  const perDay = new Map();
+  for (const s of sessions) {
+    if (s.athleteId !== athleteId) continue;
+    if (s.date < startStr || s.date > endStr) continue;
+    perDay.set(s.date, (perDay.get(s.date) || 0) + (Number(s.points) || 0));
+  }
+  const days = [];
+  for (let d = startStr; d <= endStr; d = addDays(d, 1)) days.push(perDay.get(d) || 0);
+  days.sort((a, b) => b - a);
+  return round1(days.slice(0, keep).reduce((t, v) => t + v, 0));
+}
+
 /* ---------------- rolling 14-day board ---------------- */
 
 /**
  * Per-athlete totals over the trailing 14 days ending asOf (inclusive),
  * plus the prior 14-day totals for the trend arrow. Sorted by points desc.
+ * From REST_RULES_FROM both windows count the best 12 of 14 days
+ * (like-for-like, so the trend arrow stays honest).
  */
 export function rolling14Day(sessions, athletes, asOf = todayStr()) {
   const cur0 = addDays(asOf, -13);
   const prev0 = addDays(asOf, -27);
   const prev1 = addDays(asOf, -14);
+  const restRules = asOf >= REST_RULES_FROM;
 
   const rows = athletes.map((a) => {
     const mine = sessions.filter((s) => s.athleteId === a.id);
-    const points = sumPoints(
-      mine.filter((s) => s.date >= cur0 && s.date <= asOf)
-    );
-    const prior = sumPoints(
-      mine.filter((s) => s.date >= prev0 && s.date <= prev1)
-    );
+    const points = restRules
+      ? bestDaysSum(sessions, a.id, cur0, asOf, 12)
+      : sumPoints(mine.filter((s) => s.date >= cur0 && s.date <= asOf));
+    const prior = restRules
+      ? bestDaysSum(sessions, a.id, prev0, prev1, 12)
+      : sumPoints(mine.filter((s) => s.date >= prev0 && s.date <= prev1));
     return {
       athlete: a,
       points,
@@ -260,9 +287,23 @@ export function rangeStandings(sessions, athletes, startStr, endStr) {
   return rows.map((r, i) => ({ ...r, rank: i + 1 }));
 }
 
-/** One week's Mon–Sun totals per athlete: points, sessions, minutes. Ranked. */
+/**
+ * One week's Mon–Sun totals per athlete: points, sessions, minutes. Ranked.
+ * From REST_RULES_FROM the points are each athlete's best 6 of 7 days
+ * (rest-day protection); sessions/minutes stay the full week's — they
+ * are participation stats, not score. Earlier weeks keep the straight
+ * 7-day sum, so the recorded chain (Throne, Spoon, recap, Hall) never
+ * rewrites history. Every weekly derivation reads through here, so
+ * the chain, the live race and the past-winners list always agree.
+ */
 export function weeklyStandings(sessions, athletes, weekStartStr) {
-  return rangeStandings(sessions, athletes, weekStartStr, addDays(weekStartStr, 6));
+  const rows = rangeStandings(sessions, athletes, weekStartStr, addDays(weekStartStr, 6));
+  if (weekStartStr < REST_RULES_FROM) return rows;
+  for (const r of rows) {
+    r.points = bestDaysSum(sessions, r.athlete.id, weekStartStr, addDays(weekStartStr, 6), 6);
+  }
+  rows.sort((x, y) => y.points - x.points);
+  return rows.map((r, i) => ({ ...r, rank: i + 1 }));
 }
 
 /** Calendar quarter containing dateStr: { start, end, label } — "Q4 2026". */
@@ -968,6 +1009,83 @@ export function kingHasFallen(sessions, athletes, asOf = todayStr(), flags = [])
       };
     })
     .filter(Boolean);
+}
+
+/* ---------------- the Trophy (Casey, Nov 18–19, 2026) ---------------- */
+
+/**
+ * The Trophy: a second, rolling title beside the Throne. Whoever
+ * leads the rolling 14-day board HOLDS it, and every consecutive
+ * day they keep the lead, the cup levels up — L1 for days 1–2, a
+ * new level every 2 days, L10 at days 19–20; past that it stays
+ * L10 and the day count keeps climbing. The holder's face is on
+ * the cup (pre-generated art in public/trophies/, see statues.js).
+ * Career days held bank on the profile. The Trophy is never taxed
+ * or boosted — it reads the raw rolling board.
+ *
+ * Streaks count from TROPHY_EPOCH (= REST_RULES_FROM, the day the
+ * rest-day rules begin): no holder before then and career totals
+ * start at zero for everyone — the title is new, its history
+ * starts clean. Leadership is evaluated at each day's end over
+ * that day's rolling window (for today: the sessions posted so
+ * far), exactly as the live board shows it. Ties share the hold,
+ * as with the Throne.
+ */
+export const TROPHY_EPOCH = REST_RULES_FROM;
+export const TROPHY_MAX_LEVEL = 10;
+
+/** Trophy cup level for a hold of `days` consecutive days (0 → 0). */
+export function trophyLevelForDays(days) {
+  const n = Number(days) || 0;
+  if (n <= 0) return 0;
+  return Math.min(TROPHY_MAX_LEVEL, Math.floor((n - 1) / 2) + 1);
+}
+
+/** Best-12-of-14 rolling totals per athlete for the window ending endStr. */
+function rollingTotalsBest12(sessions, athletes, endStr) {
+  const start = addDays(endStr, -13);
+  const totals = {};
+  for (const a of athletes) totals[a.id] = bestDaysSum(sessions, a.id, start, endStr, 12);
+  return totals;
+}
+
+/**
+ * The Trophy state as of asOf:
+ * { holders: [{ athlete, days, level, points }], careerByAthlete, epoch }.
+ * `days` is the holder's current streak of consecutive days led;
+ * `careerByAthlete` maps athlete id → total days held since the epoch.
+ */
+export function trophyState(sessions, athletes, asOf = todayStr()) {
+  const careerByAthlete = {};
+  for (const a of athletes) careerByAthlete[a.id] = 0;
+  if (!sessions || sessions.length === 0 || !athletes || athletes.length === 0 || asOf < TROPHY_EPOCH) {
+    return { holders: [], careerByAthlete, epoch: TROPHY_EPOCH };
+  }
+  const streaks = {};
+  let holders = [];
+  for (let d = TROPHY_EPOCH; d <= asOf; d = addDays(d, 1)) {
+    const totals = rollingTotalsBest12(sessions, athletes, d);
+    const top = Math.max(0, ...athletes.map((a) => totals[a.id] || 0));
+    const leaders = top > 0 ? athletes.filter((a) => (totals[a.id] || 0) === top) : [];
+    const leaderIds = new Set(leaders.map((a) => a.id));
+    for (const a of athletes) {
+      if (leaderIds.has(a.id)) {
+        streaks[a.id] = (streaks[a.id] || 0) + 1;
+        careerByAthlete[a.id] += 1;
+      } else {
+        streaks[a.id] = 0;
+      }
+    }
+    if (d === asOf) {
+      holders = leaders.map((a) => ({
+        athlete: a,
+        days: streaks[a.id] || 0,
+        level: trophyLevelForDays(streaks[a.id] || 0),
+        points: totals[a.id] || 0,
+      }));
+    }
+  }
+  return { holders, careerByAthlete, epoch: TROPHY_EPOCH };
 }
 
 /** All-time per-sport totals for one athlete: { sport: {points, sessions, minutes} }. */
