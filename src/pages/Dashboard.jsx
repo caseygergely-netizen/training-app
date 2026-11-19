@@ -9,6 +9,7 @@ import {
   weeklyWinners,
   quarterlyStandings,
   currentThrone,
+  kingHasFallen,
   hallOfKings,
   hallOfCellar,
   currentSpoon,
@@ -64,6 +65,27 @@ export default function Dashboard() {
   const spoon = currentSpoon(sessions, athletes, asOf);
   const grip = throneGrip(sessions, athletes, asOf, flags);
   const bleeding = grip ? grip.find((g) => g.bleeding) : null;
+  const fallen = kingHasFallen(sessions, athletes, asOf, flags);
+  // Hall of Shame (Casey, Nov 18, 2026): every asterisked win in the
+  // taxed record — flag asterisks and golden (spoon-boost) asterisks.
+  const shame = [];
+  for (const w of throne?.history || []) {
+    for (const a of w.winners) {
+      const flag = !!w.asteriskByWinner?.[a.id];
+      const golden = !!w.goldenByWinner?.[a.id];
+      if (flag || golden)
+        shame.push({
+          athlete: a,
+          weekStart: w.weekStart,
+          reign: w.reignByWinner?.[a.id] || 1,
+          flag,
+          golden,
+        });
+    }
+  }
+  const goldenByWeek = new Set(
+    shame.filter((s) => s.golden).map((s) => `${s.weekStart}|${s.athlete.id}`)
+  );
   const hall = hallOfKings(sessions, athletes, asOf, flags);
   const cellar = hallOfCellar(sessions, athletes, asOf);
   const weekRows = taxedWeeklyStandings(sessions, athletes, weekStart, throne, spoon);
@@ -208,18 +230,23 @@ export default function Dashboard() {
                       athlete={h.athlete}
                       reign={h.reignWeeks}
                       variant="hero"
+                      goldenAsterisk={h.goldenAsterisk}
                       overlay={
                         <>
                           <div className="throne-name">{h.athlete.name}</div>
                           <div className="throne-title">
                             👑 {h.title} · reign of {h.reignWeeks} week
                             {h.reignWeeks === 1 ? "" : "s"}
+                            {h.goldenAsterisk ? " ✳" : ""}
                           </div>
                           <div className="small" style={{ color: "#d8deea" }}>
                             Won the week of {prettyDate(throne.weekStart)} —
                             defends this week at{" "}
                             <strong>×{h.taxFactor.toFixed(2)}</strong> (dynasty
                             tax, weekly-race points only)
+                            {h.goldenAsterisk
+                              ? " · ✳ GOLDEN ASTERISK: this crown was won on the spoon boost. Well deserved."
+                              : ""}
                           </div>
                         </>
                       }
@@ -279,24 +306,38 @@ export default function Dashboard() {
                 ) : null
               )}
             <p className="small muted" style={{ marginTop: 10 }}>
-              Win the week, take the Throne: reigns earn titles (The New
-              King → The Undisputed → The Dynasty → The Legend) and a
-              dynasty tax up to ×0.80 — and two straight last-place
-              finishes arm the Spoon's ×1.10 boost.
+              Win the week, take the Throne: reigns earn titles — reign
+              week 1, week 2, week 3, week 4 and beyond — but the names
+              stay sealed until someone earns them 🤐. A dynasty tax up
+              to ×0.80 comes with the crown, two straight last-place
+              finishes arm the Spoon's ×1.10 boost, and the Spoon's
+              shame titles are sealed too.
             </p>
           </div>
 
           {/* ——— 2 · This week's race ——— */}
           <h1 style={{ fontSize: 18, marginTop: 18 }}>🏁 This week's race</h1>
           <div className="card race-card" style={{ marginTop: 8 }}>
-            {bleeding && (
-              <div className="bleeding-banner">
-                🩸 <strong>THE KING IS BLEEDING</strong> —{" "}
-                {bleeding.challenger.name} leads {bleeding.holder.athlete.name}{" "}
-                {bleeding.challengerPoints}–{bleeding.kingPoints} in this
-                week's race.
-              </div>
-            )}
+            {fallen.length > 0
+              ? fallen.map((f) => (
+                  <div className="fallen-banner" key={f.holder.athlete.id}>
+                    ⚰️ <strong>THE KING HAS FALLEN</strong> — {f.leader.name}{" "}
+                    leads {f.holder.athlete.name} {f.leaderPoints}–
+                    {f.kingPoints}, and even a best-ever day ({f.bestDay}{" "}
+                    pts) on every one of the {f.daysLeft} remaining day
+                    {f.daysLeft === 1 ? "" : "s"} can't close the gap. The
+                    reign is mathematically dead — Monday's coronation is a
+                    formality.
+                  </div>
+                ))
+              : bleeding && (
+                  <div className="bleeding-banner">
+                    🩸 <strong>THE KING IS BLEEDING</strong> —{" "}
+                    {bleeding.challenger.name} leads {bleeding.holder.athlete.name}{" "}
+                    {bleeding.challengerPoints}–{bleeding.kingPoints} in this
+                    week's race.
+                  </div>
+                )}
             {weekRows.map((row, i) => (
               <RaceLane
                 key={row.athlete.id}
@@ -334,6 +375,24 @@ export default function Dashboard() {
                 : ""}{" "}
               — past winners below.
             </p>
+            {weekRows.length > 0 && (
+              <p className="small muted" style={{ marginTop: 4 }}>
+                🥄 Spoon watch:{" "}
+                {weekRows[weekRows.length - 1].athlete.name} is on cellar
+                pace this week
+                {spoon.holders.length > 0
+                  ? ` · ${spoon.holders
+                      .map(
+                        (h) =>
+                          `${h.athlete.name} holds the spoon at a ${h.streak}-week streak${
+                            h.boostActive ? " — ×1.10 boost ARMED" : ""
+                          }`
+                      )
+                      .join(" · ")}`
+                  : ""}
+                .
+              </p>
+            )}
           </div>
 
           {/* ——— 3 · Rolling 14-day board ——— */}
@@ -398,7 +457,7 @@ export default function Dashboard() {
                         key={`${r.athlete.id}-${r.fromWeek}`}
                       >
                         {statueUrlFor(r.athlete) ? (
-                          <Statue athlete={r.athlete} reign={r.weeks} variant="hall" />
+                          <Statue athlete={r.athlete} reign={r.weeks} variant="hall" goldenAsterisk={!!r.goldenAsterisk} />
                         ) : (
                           <Avatar
                             athlete={r.athlete}
@@ -406,13 +465,19 @@ export default function Dashboard() {
                             reign={r.weeks}
                           />
                         )}
-                        <div className="hk-name">{r.athlete.name}</div>
+                        <div className="hk-name">{r.athlete.name}{r.goldenAsterisk ? " ✳" : ""}</div>
                         <div className="hk-meta">
                           {r.weeks}-week reign
                           <br />
                           {r.title}
                           <br />
                           {r.current ? "👑 reigning" : prettyDate(r.fromWeek)}
+                          {r.goldenAsterisk ? (
+                            <>
+                              <br />
+                              ✳ includes a GOLDEN ASTERISK win
+                            </>
+                          ) : null}
                         </div>
                       </div>
                     ))}
@@ -447,6 +512,43 @@ export default function Dashboard() {
                     </div>
                   </>
                 )}
+                {shame.length > 0 && (
+                  <>
+                    <h3 style={{ marginTop: 10 }}>
+                      ✳ Hall of Shame — asterisked wins
+                    </h3>
+                    <div className="hall">
+                      {shame.map((s) => (
+                        <div
+                          className="hall-king"
+                          key={`${s.athlete.id}-${s.weekStart}`}
+                        >
+                          {statueUrlFor(s.athlete) ? (
+                            <Statue
+                              athlete={s.athlete}
+                              reign={s.reign}
+                              variant="hall"
+                              goldenAsterisk={s.golden}
+                            />
+                          ) : (
+                            <Avatar athlete={s.athlete} size={44} reign={s.reign} />
+                          )}
+                          <div className="hk-name">
+                            {s.athlete.name}
+                            {s.golden ? " ✳" : " *"}
+                          </div>
+                          <div className="hk-meta">
+                            {s.golden
+                              ? "GOLDEN ASTERISK — won the week on the spoon boost"
+                              : "flagged win — a counting session was flagged"}
+                            <br />
+                            week of {prettyDate(s.weekStart)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
               </div>
             </>
           )}
@@ -464,6 +566,9 @@ export default function Dashboard() {
                 const anyAsterisk = w.winners.some(
                   (a) => w.asteriskByWinner?.[a.id]
                 );
+                const anyGolden = w.winners.some((a) =>
+                  goldenByWeek.has(`${w.weekStart}|${a.id}`)
+                );
                 return (
                   <div className="hist-row" key={w.weekStart}>
                     <div>
@@ -472,12 +577,23 @@ export default function Dashboard() {
                         {w.winners
                           .map(
                             (a) =>
-                              a.name + (w.asteriskByWinner?.[a.id] ? " *" : "")
+                              a.name +
+                              (goldenByWeek.has(`${w.weekStart}|${a.id}`)
+                                ? " ✳"
+                                : w.asteriskByWinner?.[a.id]
+                                  ? " *"
+                                  : "")
                           )
                           .join(" & ")}{" "}
                         won with {w.points} pts
-                        {!anyAsterisk ? " · clean win ✨" : ""}
+                        {!anyAsterisk && !anyGolden ? " · clean win ✨" : ""}
                       </div>
+                      {anyGolden && (
+                        <div className="small muted">
+                          ✳ GOLDEN ASTERISK — that win rode the spoon
+                          boost. Glorious. Tainted. Both.
+                        </div>
+                      )}
                       {anyAsterisk && (
                         <div className="small muted">
                           * a session counting toward that win was flagged —

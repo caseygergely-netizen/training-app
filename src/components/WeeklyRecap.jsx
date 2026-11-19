@@ -29,23 +29,35 @@ export default function WeeklyRecap({ recap, onClose, achievements = [] }) {
               athlete={winner.athlete}
               reign={winner.reignWeeks}
               variant="recap"
+              goldenAsterisk={!!winner.golden}
             />
             <div className="recap-winner">
               {recap.winners.map((w) => w.athlete.name).join(" & ")} take
               {recap.winners.length === 1 ? "s" : ""} the Throne —{" "}
               {winner.title}, reign of {winner.reignWeeks} week
               {winner.reignWeeks === 1 ? "" : "s"}
-              {winner.asterisk ? " *" : ""}
+              {winner.golden ? " ✳" : winner.asterisk ? " *" : ""}
             </div>
+            {winner.golden && (
+              <div className="fallen-banner" style={{ marginTop: 10 }}>
+                ✳ <strong>THE GOLDEN ASTERISK</strong> ✳ — this crown was
+                won ON THE SPOON BOOST. Two weeks in the cellar, then the
+                ×1.10 carried them all the way to the Throne. A
+                well-deserved asterisk, framed in gold, impossible to
+                ignore — exactly as it should be.
+              </div>
+            )}
             <div className="small muted">
               Won with {recap.taxedPoints} pts
               {recap.rawPoints !== recap.taxedPoints
                 ? ` (${recap.rawPoints} raw — the dynasty tax was already biting)`
                 : ""}
               .
-              {winner.asterisk
-                ? " * A session counting toward the win was flagged — they won, but did they really win?"
-                : " A clean win ✨ — no flags on the sessions that counted."}
+              {winner.golden
+                ? " The boost giveth, and the asterisk recordeth forever."
+                : winner.asterisk
+                  ? " * A session counting toward the win was flagged — they won, but did they really win?"
+                  : " A clean win ✨ — no flags on the sessions that counted."}
             </div>
           </>
         )}

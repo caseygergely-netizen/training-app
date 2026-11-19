@@ -503,11 +503,16 @@ function weeklyChain(sessions, athletes, asOf = todayStr(), flags = []) {
     }
     const asteriskByWinner = {};
     const reignByWinner = {};
+    const goldenByWinner = {};
     for (const w of winners) {
       asteriskByWinner[w.athlete.id] = weekAsterisk(
         flags, sessionById, w.athlete.id, wk, weekEnd
       );
       reignByWinner[w.athlete.id] = reigns[w.athlete.id];
+      // The Golden Asterisk (Casey, Nov 18, 2026): a winner whose
+      // spoon boost was live that week won WITH the ×1.10 — a
+      // well-deserved asterisk, played for pure comedy.
+      goldenByWinner[w.athlete.id] = (w.boostFactor || 1) > 1;
     }
     const spoonByAthlete = {};
     for (const lp of lastPlace) spoonByAthlete[lp.athlete.id] = streaks[lp.athlete.id];
@@ -522,6 +527,7 @@ function weeklyChain(sessions, athletes, asOf = todayStr(), flags = []) {
       asteriskByWinner,
       reignByWinner,
       spoonByAthlete,
+      goldenByWinner,
       hasRace,
     });
   }
@@ -547,6 +553,7 @@ export function throneHistory(sessions, athletes, asOf = todayStr(), flags = [])
       taxedPoints: w.taxedPoints,
       asteriskByWinner: w.asteriskByWinner,
       reignByWinner: w.reignByWinner,
+      goldenByWinner: w.goldenByWinner,
       // The week's adjusted standings (tax + boost applied) and its
       // last-place finishers with their streaks after that week.
       rows: w.rows,
@@ -675,6 +682,7 @@ export function currentThrone(sessions, athletes, asOf = todayStr(), flags = [])
       title: throneTitleForReign(reignWeeks),
       defenseWeek,
       taxFactor: throneTaxForReignWeek(defenseWeek),
+      goldenAsterisk: !!latest.goldenByWinner?.[a.id],
     };
   });
   return { holders, weekStart: latest.weekStart, history };
@@ -698,6 +706,7 @@ export function hallOfKings(sessions, athletes, asOf = todayStr(), flags = []) {
           open[a.id] = { athlete: a, weeks: 0, fromWeek: wk.weekStart, toWeek: wk.weekStart };
         open[a.id].weeks += 1;
         open[a.id].toWeek = wk.weekStart;
+        if (wk.goldenByWinner?.[a.id]) open[a.id].goldenAsterisk = true;
       } else if (open[a.id]) {
         reigns.push(open[a.id]);
         delete open[a.id];
@@ -815,6 +824,7 @@ export function weeklyRecap(sessions, athletes, asOf = todayStr(), flags = []) {
       reignWeeks: latest.reignByWinner[a.id] || 1,
       title: throneTitleForReign(latest.reignByWinner[a.id] || 1),
       asterisk: !!latest.asteriskByWinner[a.id],
+      golden: !!latest.goldenByWinner?.[a.id],
     })),
     rawPoints: latest.rawPoints,
     taxedPoints: latest.taxedPoints,
@@ -907,6 +917,57 @@ export function throneGrip(sessions, athletes, asOf = todayStr(), flags = []) {
       bleeding: challengerPoints > kingPoints,
     };
   });
+}
+
+/**
+ * "The King Has Fallen" (Casey, Nov 18, 2026): a sitting holder is
+ * FALLEN when even a miracle can't save the reign — the current
+ * leader's adjusted points exceed the king's adjusted points plus
+ * the best single day anyone has EVER scored in this league,
+ * multiplied by the full days left in the week after today. The
+ * bound is deliberately generous to the king (his future points
+ * would be taxed; the best-day figure is untaxed and counts full
+ * days only), so the banner only fires when the reign is truly,
+ * mathematically dead. Returns one entry per fallen holder:
+ * [{ holder, leader, leaderPoints, kingPoints, maxPossible,
+ *    bestDay, daysLeft }] — empty when every holder can still win.
+ */
+export function kingHasFallen(sessions, athletes, asOf = todayStr(), flags = []) {
+  const throne = currentThrone(sessions, athletes, asOf, flags);
+  if (!throne) return [];
+  const spoon = currentSpoon(sessions, athletes, asOf);
+  const weekStart = mondayOf(asOf);
+  const rows = taxedWeeklyStandings(sessions, athletes, weekStart, throne, spoon);
+  if (rows.length === 0) return [];
+  const leader = rows[0];
+  const dayTotals = {};
+  for (const s of sessions || []) {
+    const k = `${s.athleteId}|${s.date}`;
+    dayTotals[k] = (dayTotals[k] || 0) + (Number(s.points) || 0);
+  }
+  const bestDay = Math.max(100, ...Object.values(dayTotals));
+  const weekEnd = addDays(weekStart, 6);
+  let daysLeft = 0;
+  for (let d = addDays(asOf, 1); d <= weekEnd; d = addDays(d, 1)) daysLeft++;
+  if (daysLeft === 0) return [];
+  return throne.holders
+    .map((h) => {
+      if (leader.athlete.id === h.athlete.id) return null;
+      const kingRow = rows.find((r) => r.athlete.id === h.athlete.id);
+      const kingPoints = kingRow ? kingRow.points : 0;
+      const maxPossible = round1(kingPoints + bestDay * daysLeft);
+      if (leader.points <= maxPossible) return null;
+      return {
+        holder: h,
+        leader: leader.athlete,
+        leaderPoints: leader.points,
+        kingPoints,
+        maxPossible,
+        bestDay,
+        daysLeft,
+      };
+    })
+    .filter(Boolean);
 }
 
 /** All-time per-sport totals for one athlete: { sport: {points, sessions, minutes} }. */

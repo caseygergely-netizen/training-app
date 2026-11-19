@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { statueTierUrlFor } from "../lib/statues.js";
 
 /**
@@ -18,6 +19,16 @@ import { statueTierUrlFor } from "../lib/statues.js";
  * Dashboard's Throne hero — full-width, with the holder's name /
  * title / tax as an overlay bar on the image; pass the bar as
  * `overlay`).
+ *
+ * `goldenAsterisk` (Casey, Nov 18, 2026): the win that carried it
+ * was won on the spoon boost — the statue wears a giant glowing
+ * golden asterisk, with a purely ridiculous amount of shine.
+ *
+ * Tier unveilings (Casey, Nov 18, 2026): the last tier each browser
+ * saw per athlete is remembered (localStorage); when the statue
+ * next renders at a DIFFERENT tier, it gets a one-off unveil
+ * treatment — a shine sweep and a NEW TIER ribbon — instead of
+ * silently swapping. First sight just records the tier.
  */
 export default function Statue({
   athlete,
@@ -27,16 +38,31 @@ export default function Statue({
   className = "",
   overlay = null,
   sad = false,
+  goldenAsterisk = false,
 }) {
   const loss = sad || Number(spoonStreak) > 0;
   const tier = loss
     ? Math.max(1, Math.min(4, Number(spoonStreak) || 1))
     : Math.max(1, Math.min(5, Number(reign) || 1));
   const url = statueTierUrlFor(athlete, loss ? "loss" : "win", tier);
+  const athleteId = athlete?.id || null;
+  const tierKey = athleteId ? `${loss ? "l" : "w"}${tier}` : null;
+  const [unveil, setUnveil] = useState(false);
+  useEffect(() => {
+    if (!athleteId || !tierKey) return;
+    const key = `fomo.statueTier.${athleteId}`;
+    try {
+      const seen = localStorage.getItem(key);
+      if (seen && seen !== tierKey) setUnveil(true);
+      localStorage.setItem(key, tierKey);
+    } catch {
+      /* storage unavailable — no unveil, statue still renders */
+    }
+  }, [athleteId, tierKey]);
   if (!url) return null;
   return (
     <figure
-      className={`statue statue-${variant} ${loss ? `statue-sad statue-l${tier}` : `statue-t${tier}`}${className ? ` ${className}` : ""}`}
+      className={`statue statue-${variant} ${loss ? `statue-sad statue-l${tier}` : `statue-t${tier}`}${goldenAsterisk ? " statue-golden" : ""}${unveil ? " statue-unveil" : ""}${className ? ` ${className}` : ""}`}
     >
       <img
         src={url}
@@ -48,6 +74,16 @@ export default function Statue({
         draggable={false}
         loading="lazy"
       />
+      {goldenAsterisk ? (
+        <div className="golden-asterisk" aria-hidden="true">
+          *
+        </div>
+      ) : null}
+      {unveil ? (
+        <div className="statue-unveil-ribbon" aria-hidden="true">
+          ✦ NEW TIER ✦
+        </div>
+      ) : null}
       {/* No material caption (Casey, Nov 17, 2026): nobody needs a
           label telling them it's a gold statue — the picture says it. */}
       {overlay ? <div className="statue-overlay">{overlay}</div> : null}
