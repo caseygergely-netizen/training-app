@@ -28,7 +28,13 @@ import { statueTierUrlFor } from "../lib/statues.js";
  * saw per athlete is remembered (localStorage); when the statue
  * next renders at a DIFFERENT tier, it gets a one-off unveil
  * treatment — a shine sweep and a NEW TIER ribbon — instead of
- * silently swapping. First sight just records the tier.
+ * silently swapping. First sight just records the tier. Only
+ * CURRENT-status statues watch (`unveilWatch`: the Dashboard hero
+ * and the profile cards) — historical statues (Hall of Kings,
+ * Cellar, Hall of Shame, recap) legitimately show older tiers for
+ * the same athlete, and letting them write the remembered tier made
+ * the ribbon fire every time two surfaces disagreed (Casey's
+ * bug report, Nov 18, 2026).
  */
 export default function Statue({
   athlete,
@@ -39,6 +45,7 @@ export default function Statue({
   overlay = null,
   sad = false,
   goldenAsterisk = false,
+  unveilWatch = false,
 }) {
   const loss = sad || Number(spoonStreak) > 0;
   const tier = loss
@@ -49,7 +56,7 @@ export default function Statue({
   const tierKey = athleteId ? `${loss ? "l" : "w"}${tier}` : null;
   const [unveil, setUnveil] = useState(false);
   useEffect(() => {
-    if (!athleteId || !tierKey) return;
+    if (!unveilWatch || !athleteId || !tierKey) return;
     const key = `fomo.statueTier.${athleteId}`;
     try {
       const seen = localStorage.getItem(key);
@@ -58,7 +65,7 @@ export default function Statue({
     } catch {
       /* storage unavailable — no unveil, statue still renders */
     }
-  }, [athleteId, tierKey]);
+  }, [unveilWatch, athleteId, tierKey]);
   if (!url) return null;
   return (
     <figure

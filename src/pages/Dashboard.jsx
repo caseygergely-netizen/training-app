@@ -66,26 +66,11 @@ export default function Dashboard() {
   const grip = throneGrip(sessions, athletes, asOf, flags);
   const bleeding = grip ? grip.find((g) => g.bleeding) : null;
   const fallen = kingHasFallen(sessions, athletes, asOf, flags);
-  // Hall of Shame (Casey, Nov 18, 2026): every asterisked win in the
-  // taxed record — flag asterisks and golden (spoon-boost) asterisks.
-  const shame = [];
-  for (const w of throne?.history || []) {
-    for (const a of w.winners) {
-      const flag = !!w.asteriskByWinner?.[a.id];
-      const golden = !!w.goldenByWinner?.[a.id];
-      if (flag || golden)
-        shame.push({
-          athlete: a,
-          weekStart: w.weekStart,
-          reign: w.reignByWinner?.[a.id] || 1,
-          flag,
-          golden,
-        });
-    }
-  }
-  const goldenByWeek = new Set(
-    shame.filter((s) => s.golden).map((s) => `${s.weekStart}|${s.athlete.id}`)
-  );
+  // Golden-asterisk wins by week, for the past-winners markers.
+  const goldenByWeek = new Set();
+  for (const w of throne?.history || [])
+    for (const a of w.winners)
+      if (w.goldenByWinner?.[a.id]) goldenByWeek.add(`${w.weekStart}|${a.id}`);
   const hall = hallOfKings(sessions, athletes, asOf, flags);
   const cellar = hallOfCellar(sessions, athletes, asOf);
   const weekRows = taxedWeeklyStandings(sessions, athletes, weekStart, throne, spoon);
@@ -230,6 +215,7 @@ export default function Dashboard() {
                       athlete={h.athlete}
                       reign={h.reignWeeks}
                       variant="hero"
+                      unveilWatch
                       goldenAsterisk={h.goldenAsterisk}
                       overlay={
                         <>
@@ -306,12 +292,9 @@ export default function Dashboard() {
                 ) : null
               )}
             <p className="small muted" style={{ marginTop: 10 }}>
-              Win the week, take the Throne: reigns earn titles — reign
-              week 1, week 2, week 3, week 4 and beyond — but the names
-              stay sealed until someone earns them 🤐. A dynasty tax up
-              to ×0.80 comes with the crown, two straight last-place
-              finishes arm the Spoon's ×1.10 boost, and the Spoon's
-              shame titles are sealed too.
+              Win the week, take the Throne: reigns earn titles and a
+              dynasty tax up to ×0.80. Two straight last-place finishes
+              arm the Spoon's ×1.10 boost.
             </p>
           </div>
 
@@ -506,43 +489,6 @@ export default function Dashboard() {
                             {r.title}
                             <br />
                             {r.current ? "🥄 serving now" : prettyDate(r.fromWeek)}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </>
-                )}
-                {shame.length > 0 && (
-                  <>
-                    <h3 style={{ marginTop: 10 }}>
-                      ✳ Hall of Shame — asterisked wins
-                    </h3>
-                    <div className="hall">
-                      {shame.map((s) => (
-                        <div
-                          className="hall-king"
-                          key={`${s.athlete.id}-${s.weekStart}`}
-                        >
-                          {statueUrlFor(s.athlete) ? (
-                            <Statue
-                              athlete={s.athlete}
-                              reign={s.reign}
-                              variant="hall"
-                              goldenAsterisk={s.golden}
-                            />
-                          ) : (
-                            <Avatar athlete={s.athlete} size={44} reign={s.reign} />
-                          )}
-                          <div className="hk-name">
-                            {s.athlete.name}
-                            {s.golden ? " ✳" : " *"}
-                          </div>
-                          <div className="hk-meta">
-                            {s.golden
-                              ? "GOLDEN ASTERISK — won the week on the spoon boost"
-                              : "flagged win — a counting session was flagged"}
-                            <br />
-                            week of {prettyDate(s.weekStart)}
                           </div>
                         </div>
                       ))}

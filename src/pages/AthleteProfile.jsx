@@ -204,7 +204,7 @@ export default function AthleteProfile() {
             ×{myReign.taxFactor.toFixed(2)}
           </p>
           <div style={{ marginBottom: 12 }}>
-            <Statue athlete={athlete} reign={myReign.reignWeeks} variant="card" />
+            <Statue athlete={athlete} reign={myReign.reignWeeks} variant="card" unveilWatch />
           </div>
         </>
       )}
@@ -218,7 +218,7 @@ export default function AthleteProfile() {
               : ""}
           </p>
           <div style={{ marginBottom: 12 }}>
-            <Statue athlete={athlete} spoonStreak={mySpoon.streak} variant="card" />
+            <Statue athlete={athlete} spoonStreak={mySpoon.streak} variant="card" unveilWatch />
           </div>
         </>
       )}
