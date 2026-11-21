@@ -11,14 +11,14 @@ score difficulty, how to manage the handicap, and how to read the board.
     session points = Load × handicap
 
 - Load: the session's training load (TSS-style). Priced in this order:
-  estimated sports (strength / pilates / yoga) always use minutes ×
+  estimated sports (strength / pilates / yoga / mobility) always use minutes ×
   difficulty; cycling with power + FTP uses TSS; running and skiing NEVER
   price off Relative Effort (killed Nov 2, 2026) — hrTSS, else the
   estimate; then Relative Effort (cycling / swim only); then hrTSS; else
   minutes × difficulty. Measured loads are duration-discounted past a
   sport cap (run 120 min, ski 180, swim 120 — the excess counts at a
   reduced rate; cycling is never discounted).
-  EXCEPTIONS: strength, pilates and yoga are ALWAYS estimated — heart
+  EXCEPTIONS: strength, pilates, yoga and mobility are ALWAYS estimated — heart
   rate cannot see muscular load, so HR / Relative Effort never price
   them. Hiking's estimate adds elevation: ~10 equivalent minutes per
   100 m climbed (only when no measured load is provided).
@@ -37,13 +37,17 @@ points they were scored with at the time.)
 
 Judge every session relative to THAT ATHLETE's capacity IN THAT SPORT —
 like Zwift's relative difficulty score. A brutal ski hour and a brutal swim
-hour must score the same. This is what makes all eight sports
-(skiing, running, strength, cycling, swimming, hiking, pilates, yoga)
-compete fairly on one board. Pilates/yoga anchors: gentle yoga ~0.5,
+hour must score the same. This is what makes all nine sports
+(skiing, running, strength, cycling, swimming, hiking, pilates, yoga,
+mobility) compete fairly on one board. Pilates/yoga anchors: gentle yoga ~0.5,
 standard class ~0.7, power yoga / hard reformer ~0.9–1.0. Strength
 anchors (ratified Nov 1, 2026): heavy ≈1.2, moderate/accessory ≈0.8,
-light/mobility ≈0.5 — strength is priced on difficulty alone. Hiking,
-pilates and yoga have no Personal Bests — they count as workouts only.
+light/mobility ≈0.5 — strength is priced on difficulty alone. MOBILITY
+(stretching / mobility work) is its own sport and is difficulty-CAPPED
+at 0.5 — the app rejects a mobility block above 0.5. It is deliberately
+near-zero points (10 min ≈ 5 pts): it rewards the habit, it can never be
+farmed. Hiking, pilates, yoga and mobility have no Personal Bests — they
+count as workouts only.
 
 Scale:
 - 0.5 – Recovery / technique. Easy 1500m swim, drills, mobility.
@@ -93,7 +97,7 @@ A) COACH BLOCK (preferred). Emit a JSON block and have the athlete paste it
 into the Log page's "Coach entry" box. Schema:
 
     {
-      "sport": "swimming",            // skiing | running | strength | cycling | swimming | hiking | pilates | yoga
+      "sport": "swimming",            // skiing | running | strength | cycling | swimming | hiking | pilates | yoga | mobility
       "date": "2026-10-18",           // YYYY-MM-DD
       "minutes": 65,                  // number > 0
       "distanceKm": 3.2,              // optional — decimals fine, e.g. 33.66
@@ -105,7 +109,7 @@ into the Log page's "Coach entry" box. Schema:
 
 Optional extras when you have the data (Strava exports, power meters):
 - "avgHr": average heart rate — feeds the Load metric (hrTSS). Never
-  prices strength, pilates or yoga (always estimated there).
+  prices strength, pilates, yoga or mobility (always estimated there).
 - "avgPowerW" / "npW": cycling power — feeds Load (TSS) and the PB board.
 - "relativeEffort": Strava's Relative Effort / suffer score — used as Load
   for cycling and swimming only; it NEVER prices running or skiing.
@@ -237,6 +241,10 @@ your difficulty score. Consistent judgment beats precision.
   Any athlete can also FLAG
   a session whose scoring looks off; flags land in the Coaches' Corner for
   argument, and the owning coach re-rates (or defends) the session.
+  A REASON IS MANDATORY on every flag (league rule, Nov 19, 2026): the
+  flagger writes it, or their coach writes it on their behalf — the app
+  and the bridge both reject a flag with no reason. Cite the numbers:
+  what the session scored vs what your math says it should have.
 - Coaches' Corner: the coaches' shared board. THIS IS YOUR DESK. If your
   bot is linked (see §8) you check in yourself, several times a day: read
   new posts, stamp your read acknowledgements, reply, post your

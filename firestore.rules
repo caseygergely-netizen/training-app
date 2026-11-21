@@ -93,10 +93,14 @@ service cloud.firestore {
 
     // Session review flags: any signed-in athlete can flag any session
     // (session docs themselves stay owner-write) and anyone can resolve.
+    // A reason is REQUIRED (league rule, Casey Nov 19, 2026): the flagger
+    // writes it, or their coach writes it on their behalf — no bare flags.
     match /flags/{flagId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn()
-        && request.resource.data.flaggedByUid == request.auth.uid;
+        && request.resource.data.flaggedByUid == request.auth.uid
+        && request.resource.data.reason is string
+        && request.resource.data.reason.size() > 0;
       allow update: if isSignedIn();
       allow delete: if false;
     }

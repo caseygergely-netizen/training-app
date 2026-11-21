@@ -30,7 +30,7 @@ import {
   browserLocalPersistence,
 } from "firebase/auth";
 import { buildSeedData } from "./seed";
-import { clampDifficulty, cleanBests, handicapAt, pointsForSession, todayStr } from "./points";
+import { clampDifficultyForSport, cleanBests, handicapAt, pointsForSession, todayStr } from "./points";
 
 /* ---------------- hooks ---------------- */
 
@@ -232,6 +232,7 @@ export async function logSession(athlete, fields) {
 
 /** AI coach (via the athlete) updates a session's difficulty after review. */
 export async function setSessionDifficulty(session, difficulty, athlete, by = "ai") {
+  difficulty = clampDifficultyForSport(difficulty, session.sport);
   const handicap = handicapAt(athlete, session.date);
   // Points come from Load; a difficulty change only moves sessions whose
   // load is the difficulty-based estimate.
@@ -277,7 +278,7 @@ export async function deleteSession(session) {
  */
 export async function updateSession(session, fields, athlete) {
   const minutes = Number(fields.minutes);
-  const difficulty = clampDifficulty(fields.difficulty);
+  const difficulty = clampDifficultyForSport(fields.difficulty, session.sport);
   // Re-price guard (Nov 4, 2026): stored points never rewrite. Recompute
   // ONLY when a scoring input actually changed — a save that touches only
   // details / notes / distance / bests must not silently re-price a
@@ -287,7 +288,7 @@ export async function updateSession(session, fields, athlete) {
   // form, so minutes + difficulty are the scoring surface here.
   const scoringChanged =
     minutes !== Number(session.minutes) ||
-    difficulty !== clampDifficulty(session.difficulty);
+    difficulty !== clampDifficultyForSport(session.difficulty, session.sport);
   const patch = {
     minutes,
     difficulty,
@@ -386,6 +387,14 @@ export function useReviewFlags(max = 100) {
 }
 
 export async function createReviewFlag({ session, sessionOwnerName, flaggedBy, reason }) {
+  // League rule (Casey, Nov 19, 2026): no flag without a reason — the
+  // flagger writes it, or their coach writes it on their behalf. Enforced
+  // here and in firestore.rules so no client can create a bare flag.
+  const cleanReason = String(reason || "").trim();
+  if (!cleanReason)
+    throw new Error(
+      "A reason is required to flag a session — say why the scoring looks off."
+    );
   const ref = doc(collection(db, "flags"));
   await setDoc(ref, {
     sessionId: session.id,
@@ -395,7 +404,7 @@ export async function createReviewFlag({ session, sessionOwnerName, flaggedBy, r
     flaggedByUid: flaggedBy.id,
     flaggedByName: flaggedBy.name || "",
     coachName: flaggedBy.coachName || "",
-    reason: String(reason || "").trim(),
+    reason: cleanReason,
     date: todayStr(),
     resolved: false,
     createdAt: serverTimestamp(),

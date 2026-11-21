@@ -5,7 +5,7 @@ import {
   SPORT_META,
   TEST_TYPES,
   prettyDate,
-  clampDifficulty,
+  clampDifficultyForSport,
   displayLoad,
   formatKm,
   testHeadline,
@@ -24,7 +24,7 @@ function RerateControl({ session, athlete }) {
   const cur = Number(session.difficulty);
 
   async function nudge(delta) {
-    const next = clampDifficulty(Math.round((cur + delta) * 10) / 10);
+    const next = clampDifficultyForSport(Math.round((cur + delta) * 10) / 10, session.sport);
     if (next === cur) return;
     setSaving(true);
     setErr("");
@@ -245,6 +245,10 @@ function FlagControl({ session, athlete, ownerName, openFlags }) {
 
   async function doFlag() {
     if (!athlete) return;
+    if (!reason.trim()) {
+      setErr("A reason is required — say why this looks off. No bare flags (league rule).");
+      return;
+    }
     setBusy(true);
     setErr("");
     try {
@@ -303,7 +307,7 @@ function FlagControl({ session, athlete, ownerName, openFlags }) {
               <input
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
-                placeholder="Why does this look off? (optional)"
+                placeholder="Why does this look off? (required)"
                 style={{
                   flex: 1,
                   background: "var(--bg-soft)",
@@ -315,7 +319,7 @@ function FlagControl({ session, athlete, ownerName, openFlags }) {
                   fontFamily: "inherit",
                 }}
               />
-              <button className="chip" disabled={busy} onClick={doFlag}>
+              <button className="chip" disabled={busy || !reason.trim()} onClick={doFlag}>
                 🚩 Flag scoring
               </button>
             </div>

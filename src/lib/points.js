@@ -15,7 +15,7 @@
 
 export const SPORTS = [
   "skiing", "running", "strength", "cycling", "swimming",
-  "hiking", "pilates", "yoga",
+  "hiking", "pilates", "yoga", "mobility",
 ];
 
 export const SPORT_META = {
@@ -27,6 +27,7 @@ export const SPORT_META = {
   hiking: { label: "Hiking", icon: "🥾", color: "#a9d18e" },
   pilates: { label: "Pilates", icon: "🧘", color: "#f4a7c3" },
   yoga: { label: "Yoga", icon: "🕉️", color: "#c3a6e8" },
+  mobility: { label: "Stretching / Mobility", icon: "🤸", color: "#63e6be" },
 };
 
 /**
@@ -37,13 +38,22 @@ export const SPORT_META = {
  * (strength), extended to pilates/yoga when those sports were added.
  * These sports also carry no Personal Bests records.
  */
-export const ESTIMATED_LOAD_SPORTS = ["strength", "pilates", "yoga"];
+export const ESTIMATED_LOAD_SPORTS = ["strength", "pilates", "yoga", "mobility"];
 
 /** Sports with no Personal Bests board (workouts count; records don't). */
-export const NO_RECORD_SPORTS = ["hiking", "pilates", "yoga"];
+export const NO_RECORD_SPORTS = ["hiking", "pilates", "yoga", "mobility"];
 
 export const MIN_DIFFICULTY = 0.5;
 export const MAX_DIFFICULTY = 2.0;
+
+/**
+ * Per-sport difficulty caps (league rules, applied at pricing time so no
+ * entry path — coach block, manual log, Feed re-rate — can exceed them).
+ * Mobility is deliberately near-zero points (10 min ≈ 5 pts): it rewards
+ * the habit without being farmable. Approved in the Corner and green-lit
+ * by Casey, Nov 20, 2026.
+ */
+export const SPORT_DIFFICULTY_CAPS = { mobility: 0.5 };
 
 /* ---------------- date helpers (local "YYYY-MM-DD" strings) ---------------- */
 
@@ -138,6 +148,19 @@ export function clampDifficulty(d) {
   const n = Number(d);
   if (Number.isNaN(n)) return 1.0;
   return Math.min(MAX_DIFFICULTY, Math.max(MIN_DIFFICULTY, n));
+}
+
+/** Clamp a difficulty for a specific sport: global clamp, then the
+ *  per-sport cap (SPORT_DIFFICULTY_CAPS) when the sport has one. */
+export function clampDifficultyForSport(d, sport) {
+  const base = clampDifficulty(d);
+  const cap = SPORT_DIFFICULTY_CAPS[sport];
+  return cap != null ? Math.min(base, cap) : base;
+}
+
+/** The difficulty a session actually prices at (sport cap applied). */
+export function effectiveDifficulty(session) {
+  return clampDifficultyForSport(session?.difficulty ?? 1.0, session?.sport);
 }
 
 /**
@@ -1176,7 +1199,7 @@ export function hypeBadges(sessions, athletes, asOf = todayStr()) {
 /**
  * Training load for a session (TSS-style, ~ comparable to Strava's
  * Relative Effort scale). Priority:
- *  0. Estimated-load sports (strength / pilates / yoga): ALWAYS the
+ *  0. Estimated-load sports (strength / pilates / yoga / mobility): ALWAYS the
  *     estimate — HR-derived numbers can't see muscular load and must
  *     never re-price these sessions (Corner decision, Nov 1, 2026).
  *  1. Cycling with power: TSS = hours × (NP or avg power / FTP)² × 100.
@@ -1226,7 +1249,7 @@ export function computeLoad(session, athlete) {
   const minutes = Number(session?.minutes) || 0;
   if (!(minutes > 0)) return null;
   const hours = minutes / 60;
-  const difficulty = clampDifficulty(session.difficulty ?? 1.0);
+  const difficulty = effectiveDifficulty(session);
 
   if (ESTIMATED_LOAD_SPORTS.includes(session?.sport)) {
     return { value: Math.round(minutes * difficulty), source: "est" };
@@ -1323,7 +1346,7 @@ export function scoreReceipt(session, athlete) {
   if (!session) return null;
   const minutes = Number(session.minutes) || 0;
   const hours = minutes / 60;
-  const difficulty = clampDifficulty(session.difficulty ?? 1.0);
+  const difficulty = effectiveDifficulty(session);
   const handicap =
     session.handicapUsed != null
       ? Number(session.handicapUsed)
@@ -1918,13 +1941,13 @@ export function computePBs(sessions, athlete) {
 /* ---------------- AI coach block (paste-into-/log JSON) ---------------- */
 
 const COACH_SCHEMA = {
-  sport: "one of: skiing | running | strength | cycling | swimming | hiking | pilates | yoga",
+  sport: "one of: skiing | running | strength | cycling | swimming | hiking | pilates | yoga | mobility",
   date: "YYYY-MM-DD",
   minutes: "number > 0",
   distanceKm: "number, optional — decimals welcome, e.g. 33.66",
   elevationGainM: "number, optional — total climbing in metres (hiking; feeds the estimated Load when no measured load exists)",
   details: "string, optional — sets / weights / swim set times",
-  difficulty: "number 0.5–2.0, REQUIRED — set by the AI coach. Anchors: 1.0 = honest solid hour, 1.5 = hard intervals, 1.8+ = race-grade. Strength is priced on difficulty ONLY (HR / Relative Effort never re-price it): heavy ≈1.2, moderate/accessory ≈0.8, light/mobility ≈0.5 (ratified Nov 1, 2026). Pilates/yoga are estimate-priced the same way.",
+  difficulty: "number 0.5–2.0, REQUIRED — set by the AI coach. Anchors: 1.0 = honest solid hour, 1.5 = hard intervals, 1.8+ = race-grade. Strength is priced on difficulty ONLY (HR / Relative Effort never re-price it): heavy ≈1.2, moderate/accessory ≈0.8, light/mobility ≈0.5 (ratified Nov 1, 2026). Pilates/yoga are estimate-priced the same way. MOBILITY (stretching / mobility work) is difficulty-CAPPED at 0.5 — the block is rejected above it; it is deliberately near-zero points (10 min ≈ 5 pts), approved Nov 20, 2026.",
   notes: "string, optional — how it felt, what the coach noticed",
   avgHr: "number, optional — average heart rate (feeds the Load metric)",
   avgPowerW: "number, optional — average power in watts (cycling)",
@@ -1938,7 +1961,7 @@ const COACH_SCHEMA = {
   bests:
     "object — HARVEST ON EVERY POST (norm adopted Nov 2, 2026): whenever the activity data supports any best effort, the block MUST carry bests; the Personal Bests board fills ONLY from these objects, and there are no separate test entries (see 'bests shapes'). Runs: Strava's best efforts. Rides: power-curve mean-maxes. Swims: the splits, including the 400+200 pair that derives CSS pace. Strength: top sets (feeds the 1RM estimates). Never invent an effort the data does not support.",
   "scoring order (mirror this before flagging a score)":
-    "points = Load × handicap. Load order: estimated sports (strength / pilates / yoga) → minutes × difficulty; cycling with power + FTP → TSS; running / skiing NEVER price off Relative Effort (killed Nov 2, 2026) — hrTSS, else the estimate; then Relative Effort (cycling / swim only); then hrTSS; then minutes × difficulty (hiking adds elevation gain ÷ 10 as equivalent minutes). Duration discount on measured loads only: running past 120 min ×0.6, skiing past 180 min ×0.6, swimming past 120 min ×0.7; cycling is never discounted.",
+    "points = Load × handicap. Load order: estimated sports (strength / pilates / yoga / mobility) → minutes × difficulty; cycling with power + FTP → TSS; running / skiing NEVER price off Relative Effort (killed Nov 2, 2026) — hrTSS, else the estimate; then Relative Effort (cycling / swim only); then hrTSS; then minutes × difficulty (hiking adds elevation gain ÷ 10 as equivalent minutes). Duration discount on measured loads only: running past 120 min ×0.6, skiing past 180 min ×0.6, swimming past 120 min ×0.7; cycling is never discounted. Mobility difficulty is capped at 0.5 (prices at minutes × 0.5, ~5 pts per 10 min).",
   "bests shapes": {
     "cycling power (watts, mean-max for the duration)":
       "{ power60minW, power20minW, power5minW, power1minW, power5sW } — any subset",
@@ -2071,6 +2094,11 @@ export function parseCoachBlock(text) {
     problems.push(
       `difficulty must be a number ${MIN_DIFFICULTY}–${MAX_DIFFICULTY} (set by your AI coach)`
     );
+  const sportCap = SPORT_DIFFICULTY_CAPS[obj.sport];
+  if (sportCap != null && !Number.isNaN(diff) && diff > sportCap)
+    problems.push(
+      `difficulty for ${obj.sport} is capped at ${sportCap} (league rule: mobility is deliberately near-zero points — it prices at minutes × ${sportCap} no matter what)`
+    );
   if (obj.distanceKm != null && !(Number(obj.distanceKm) >= 0))
     problems.push("distanceKm must be a number ≥ 0");
   if (obj.elevationGainM != null && !(Number(obj.elevationGainM) >= 0))
@@ -2124,7 +2152,7 @@ export function parseCoachBlock(text) {
     distanceKm: obj.distanceKm != null ? round2(obj.distanceKm) : null,
     elevationGainM: obj.elevationGainM != null ? Math.round(Number(obj.elevationGainM)) : null,
     details: String(obj.details || ""),
-    difficulty: clampDifficulty(diff),
+    difficulty: clampDifficultyForSport(diff, obj.sport),
     difficultyBy: "ai",
     notes: String(obj.notes || ""),
     sourceId: extractSourceId(String(obj.details || ""), obj.sourceId),
