@@ -1049,10 +1049,11 @@ export function kingHasFallen(sessions, athletes, asOf = todayStr(), flags = [])
  * Streaks count from TROPHY_EPOCH (= REST_RULES_FROM, the day the
  * rest-day rules begin): no holder before then and career totals
  * start at zero for everyone — the title is new, its history
- * starts clean. Leadership is evaluated at each day's end over
- * that day's rolling window (for today: the sessions posted so
- * far), exactly as the live board shows it. Ties share the hold,
- * as with the Throne.
+ * starts clean. Leadership checkpoints at midnight: today's
+ * holder is whoever led at last night's close — sessions posted
+ * today move the live rolling board immediately, but they only
+ * take the Trophy from tomorrow, so the pedestal never flip-flops
+ * intraday. Ties share the hold, as with the Throne.
  */
 export const TROPHY_EPOCH = REST_RULES_FROM;
 export const TROPHY_MAX_LEVEL = 10;
@@ -1087,7 +1088,17 @@ export function trophyState(sessions, athletes, asOf = todayStr()) {
   const streaks = {};
   let holders = [];
   for (let d = TROPHY_EPOCH; d <= asOf; d = addDays(d, 1)) {
-    const totals = rollingTotalsBest12(sessions, athletes, d);
+    // Midnight checkpoint: every day is held by whoever led at the
+    // PREVIOUS night's close, so each day d is evaluated on sessions
+    // dated before d. Sessions posted today move the live rolling
+    // board immediately but only take the Trophy from tomorrow —
+    // the pedestal never flip-flops intraday, and the banked day
+    // always belongs to the athlete who was displayed holding it.
+    const totals = rollingTotalsBest12(
+      sessions.filter((s) => s.date < d),
+      athletes,
+      d
+    );
     const top = Math.max(0, ...athletes.map((a) => totals[a.id] || 0));
     const leaders = top > 0 ? athletes.filter((a) => (totals[a.id] || 0) === top) : [];
     const leaderIds = new Set(leaders.map((a) => a.id));
