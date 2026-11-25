@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { useAthletes, useSessions, useReviewFlags, useTrophySlot, seedDemoData, clearDemoData } from "../lib/firestore.js";
+import { useAthletes, useSessions, useReviewFlags, useTrophySlot, usePageViews, seedDemoData, clearDemoData } from "../lib/firestore.js";
 import { useAuth } from "../App.jsx";
 import Onboarding from "./Onboarding.jsx";
 import {
@@ -44,6 +44,30 @@ function TrendArrow({ delta, prior }) {
 
 function athleteName(athletes, id) {
   return athletes.find((a) => a.id === id)?.name || "Unknown";
+}
+
+/**
+ * What's popular (Casey, Nov 25, 2026): all-time page-view totals
+ * from /pageViews, quiet card at the bottom of the Dashboard.
+ */
+function PagePopularityCard() {
+  const { views } = usePageViews();
+  if (!views.length) return null;
+  const counts = {};
+  for (const v of views) counts[v.page] = (counts[v.page] || 0) + 1;
+  const rows = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  return (
+    <div className="card">
+      <h3>📊 What's popular</h3>
+      <p className="small muted">Page views across the league, all time.</p>
+      {rows.map(([page, n]) => (
+        <div className="hist-row" key={page}>
+          <span>{page}</span>
+          <strong>{n}</strong>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export default function Dashboard() {
@@ -642,6 +666,7 @@ export default function Dashboard() {
           </div>
         </>
       )}
+      <PagePopularityCard />
       {showRecap && (
         <WeeklyRecap
           recap={recap}

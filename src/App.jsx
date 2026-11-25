@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
-import { BrowserRouter, Routes, Route, Link, Navigate, useNavigate } from "react-router-dom";
+import React, { createContext, useContext, useEffect, useRef, useState } from "react";
+import { BrowserRouter, Routes, Route, Link, Navigate, useNavigate, useLocation } from "react-router-dom";
 import Nav from "./components/Nav.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
 import Feed from "./pages/Feed.jsx";
@@ -15,6 +15,7 @@ import {
   useAuthUser,
   useMyAthlete,
   signOutAthlete,
+  logPageView,
 } from "./lib/firestore.js";
 
 const AuthCtx = createContext(null);
@@ -86,6 +87,37 @@ function Header() {
   );
 }
 
+/**
+ * Page-view counter (Casey, Nov 25, 2026): logs one view per page
+ * mount per athlete into /pageViews. Route changes only — a re-render
+ * on the same page never double-logs.
+ */
+const PAGE_NAME_BY_PATH = [
+  [/^\/$/, "Dashboard"],
+  [/^\/feed$/, "Feed"],
+  [/^\/coaches-hub$/, "Coaches hub"],
+  [/^\/coaches$/, "Coaches Corner"],
+  [/^\/tests$/, "Benchmarks"],
+  [/^\/athletes\//, "Profiles"],
+  [/^\/invite$/, "Invite"],
+];
+
+function PageViewLogger() {
+  const { athlete } = useAuth();
+  const location = useLocation();
+  const lastKeyRef = useRef("");
+  useEffect(() => {
+    if (!athlete) return;
+    const hit = PAGE_NAME_BY_PATH.find(([re]) => re.test(location.pathname));
+    if (!hit) return;
+    const key = `${athlete.id}:${hit[1]}`;
+    if (lastKeyRef.current === key) return;
+    lastKeyRef.current = key;
+    logPageView(athlete.id, hit[1]).catch(() => {});
+  }, [athlete, location.pathname]);
+  return null;
+}
+
 function RequireAuth({ children }) {
   const { user, athlete, ready, athleteLoading } = useAuth();
   if (!ready || athleteLoading)
@@ -146,6 +178,7 @@ function Shell() {
         </div>
       )}
       <Header />
+      <PageViewLogger />
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/" element={<RequireAuth><Dashboard /></RequireAuth>} />

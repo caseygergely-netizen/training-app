@@ -18,6 +18,7 @@ import {
   updateAthleteSettings,
 } from "../lib/firestore.js";
 import { useAuth } from "../App.jsx";
+import BotAccessCard from "../components/BotAccessCard.jsx";
 import {
   dailyPoints,
   addDays,
@@ -415,6 +416,8 @@ export default function AthleteProfile() {
           </form>
         </div>
       )}
+
+      {isMe && <BotAccessCard athlete={athlete} />}
 
       <div className="card">
         <h3>Daily points — last 14 days</h3>

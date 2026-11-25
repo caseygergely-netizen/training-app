@@ -4,13 +4,10 @@ import { useAuth } from "../App.jsx";
 import {
   useCoachPosts,
   useCoachReadsForPosts,
-  useMyCoachBot,
   useReviewFlags,
   addCoachPost,
   deleteCoachPost,
   markCoachPostRead,
-  createCoachLinkCode,
-  setCoachBotActive,
   updateAthleteProfile,
 } from "../lib/firestore.js";
 import { prettyDate } from "../lib/points.js";
@@ -275,14 +272,11 @@ export default function CoachesCorner() {
   // receipts at random once coachReads passed 500 docs (Nov 4, 2026).
   const { reads } = useCoachReadsForPosts(posts.map((p) => p.id));
   const { flags } = useReviewFlags();
-  const { bot } = useMyCoachBot(athlete?.id);
   const [coachName, setCoachName] = useState("");
   const [topic, setTopic] = useState("calibration");
   const [body, setBody] = useState("");
   const [posting, setPosting] = useState(false);
   const [err, setErr] = useState("");
-  const [linkCode, setLinkCode] = useState("");
-  const [botBusy, setBotBusy] = useState(false);
   const [openThreads, setOpenThreads] = useState(() => new Set());
   const [topicFilter, setTopicFilter] = useState("all");
   const stampedRef = useRef(new Set());
@@ -350,43 +344,6 @@ export default function CoachesCorner() {
 
   const effectiveCoachName =
     coachName || athlete?.coachName || "";
-
-  async function handleLinkCode() {
-    if (!athlete) return;
-    const name = (effectiveCoachName || "").trim();
-    if (!name) {
-      setErr(
-        "Set your coach's name first — the link code locks to that name and it can't be changed afterward."
-      );
-      return;
-    }
-    setBotBusy(true);
-    setErr("");
-    try {
-      if (name !== (athlete.coachName || "")) {
-        await updateAthleteProfile(athlete.id, { coachName: name });
-      }
-      const code = await createCoachLinkCode(athlete, name);
-      setLinkCode(code);
-    } catch (e) {
-      setErr(e.message || "Could not create a link code.");
-    } finally {
-      setBotBusy(false);
-    }
-  }
-
-  async function handleBotActive(active) {
-    if (!bot) return;
-    setBotBusy(true);
-    setErr("");
-    try {
-      await setCoachBotActive(bot.id, active);
-    } catch (e) {
-      setErr(e.message || "Could not update the bot link.");
-    } finally {
-      setBotBusy(false);
-    }
-  }
 
   async function handlePost() {
     if (!athlete || !body.trim()) return;
@@ -462,80 +419,6 @@ export default function CoachesCorner() {
           </p>
         </div>
       )}
-
-      <div className="card">
-        <h3>🤖 Coach bot access</h3>
-        {bot ? (
-          <>
-            <p style={{ fontSize: 14, lineHeight: 1.55 }}>
-              {bot.active ? "✅" : "⛔"} <strong>{bot.coachName}</strong> is
-              linked to your account{bot.active ? "" : " — access revoked"}.
-              A linked bot reads and posts in the Corner on its own schedule
-              and stamps its 👀 reads, so your coach never needs you to relay
-              messages. Its access is scoped to the Corner — it cannot touch
-              sessions, scores or settings.
-            </p>
-            <button
-              className="btn ghost"
-              onClick={() => handleBotActive(!bot.active)}
-              disabled={botBusy}
-            >
-              {botBusy ? "Working…" : bot.active ? "Revoke bot access" : "Restore bot access"}
-            </button>
-          </>
-        ) : (
-          <>
-            <p style={{ fontSize: 14, lineHeight: 1.55 }}>
-              Give your coach its own way in. Generate a one-time link code
-              and hand it to your coach — it connects the coach's bot account
-              to you, and from then on the coach checks in here by itself:
-              reading, stamping 👀, and replying when it has something to
-              say. No more copy-paste relay.
-            </p>
-            {linkCode ? (
-              <>
-                <div
-                  style={{
-                    fontSize: 26,
-                    letterSpacing: 4,
-                    fontWeight: 700,
-                    margin: "8px 0",
-                  }}
-                >
-                  {linkCode}
-                </div>
-                <p className="small muted">
-                  One-time code for {effectiveCoachName || "your coach"} — it
-                  dies the moment it's redeemed. If it leaks unused, just
-                  generate a fresh one later.
-                </p>
-              </>
-            ) : (
-              <>
-                <div className="field" style={{ maxWidth: 340 }}>
-                  <label>Coach name</label>
-                  <input
-                    value={effectiveCoachName}
-                    onChange={(e) => setCoachName(e.target.value)}
-                    placeholder="e.g. Nyx"
-                  />
-                </div>
-                <p className="small muted" style={{ margin: "4px 0 10px" }}>
-                  ⚠️ The code locks to this exact name and it can't be changed
-                  afterward — check the spelling before you generate.
-                </p>
-                <button
-                  className="btn"
-                  onClick={handleLinkCode}
-                  disabled={botBusy || !effectiveCoachName.trim()}
-                >
-                  {botBusy ? "Working…" : "Generate a link code"}
-                </button>
-              </>
-            )}
-          </>
-        )}
-      </div>
 
       <div className="card">
         <h3>✍️ Post as your coach</h3>

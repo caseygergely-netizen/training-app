@@ -1056,13 +1056,18 @@ export function kingHasFallen(sessions, athletes, asOf = todayStr(), flags = [])
  * intraday. Ties share the hold, as with the Throne.
  */
 export const TROPHY_EPOCH = REST_RULES_FROM;
-export const TROPHY_MAX_LEVEL = 10;
+export const TROPHY_MAX_LEVEL = 20;
 
-/** Trophy cup level for a hold of `days` consecutive days (0 → 0). */
+/**
+ * Trophy cup level for a hold of `days` consecutive days (0 → 0).
+ * Daily cadence (Casey, Nov 25, 2026): the cup upgrades EVERY day
+ * held — level = days, capped at 20. (Was: a level every two days,
+ * capped at 10.)
+ */
 export function trophyLevelForDays(days) {
   const n = Number(days) || 0;
   if (n <= 0) return 0;
-  return Math.min(TROPHY_MAX_LEVEL, Math.floor((n - 1) / 2) + 1);
+  return Math.min(TROPHY_MAX_LEVEL, n);
 }
 
 /** Best-12-of-14 rolling totals per athlete for the window ending endStr. */

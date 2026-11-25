@@ -5,6 +5,7 @@
  */
 import { useEffect, useState } from "react";
 import {
+  addDoc,
   collection,
   doc,
   getDoc,
@@ -606,6 +607,38 @@ export function useMyCoachBot(athleteId) {
 /** Athlete side: revoke (or restore) their coach bot's Corner access. */
 export async function setCoachBotActive(botUid, active) {
   await updateDoc(doc(db, "coachBots", botUid), { active: !!active });
+}
+
+/* ---------------- page views ---------------- */
+
+/**
+ * Page-view counter (Casey, Nov 25, 2026): one event per page mount
+ * per athlete, written by the app shell on every route change.
+ * { athleteId, page, date, createdAt } in /pageViews.
+ */
+export async function logPageView(athleteId, page) {
+  if (!isConfigured || !athleteId || !page) return;
+  await addDoc(collection(db, "pageViews"), {
+    athleteId,
+    page,
+    date: todayStr(),
+    createdAt: serverTimestamp(),
+  });
+}
+
+/** All page-view events — the league is tiny; totals aggregate client-side. */
+export function usePageViews() {
+  const [views, setViews] = useState([]);
+  useEffect(() => {
+    if (!isConfigured) return undefined;
+    const unsub = onSnapshot(
+      collection(db, "pageViews"),
+      (snap) => setViews(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+      () => {}
+    );
+    return unsub;
+  }, []);
+  return { views };
 }
 
 /* ---------------- invites ---------------- */

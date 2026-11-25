@@ -72,13 +72,22 @@ export function statueUrlFor(athlete) {
  * holder's face engraved on the cup, escalating in absurdity every
  * level. Generated Nov 18, 2026 (masters in statue-assets/trophy-cups/).
  */
-export const TROPHY_CUP_MAX_LEVEL = 10;
+export const TROPHY_CUP_MAX_LEVEL = 20;
 
-/** Trophy cup URL for an athlete at a cup level (1..10, clamped). */
+/**
+ * Per-athlete cup caps (Casey, Nov 25, 2026): Graham's and Pat's
+ * face-fixed cups above these levels came out wrong and are parked
+ * for a re-do, so their displayed cup clamps here until the fixed
+ * files land. Everyone else runs to TROPHY_CUP_MAX_LEVEL.
+ */
+export const TROPHY_CUP_CAP_BY_SLUG = { graham: 9, pat: 6 };
+
+/** Trophy cup URL for an athlete at a cup level (1..20, clamped). */
 export function trophyCupUrlFor(athlete, level) {
   const slug = statueSlugFor(athlete);
   if (!slug) return null;
-  const t = Math.max(1, Math.min(TROPHY_CUP_MAX_LEVEL, Number(level) || 1));
+  const cap = TROPHY_CUP_CAP_BY_SLUG[slug] || TROPHY_CUP_MAX_LEVEL;
+  const t = Math.max(1, Math.min(cap, TROPHY_CUP_MAX_LEVEL, Number(level) || 1));
   return `/trophies/${slug}-l${t}.webp`;
 }
 

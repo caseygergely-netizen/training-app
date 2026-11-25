@@ -186,5 +186,14 @@ service cloud.firestore {
              .hasOnly(['active']);
       allow delete: if false;
     }
+
+    // Page views (Nov 25, 2026): athletes log only their own views;
+    // anyone signed in can read the totals. No updates or deletes.
+    match /pageViews/{viewId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && request.resource.data.athleteId == request.auth.uid;
+      allow update, delete: if false;
+    }
   }
 }

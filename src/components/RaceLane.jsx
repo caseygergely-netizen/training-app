@@ -119,8 +119,8 @@ export default function RaceLane({
       begun = true;
       if (glow) setMoved(true);
       timers.push(setTimeout(() => setShownPct(null), 80));
-      if (glow) timers.push(setTimeout(() => setMoved(false), 2600));
-      timers.push(setTimeout(persist, 1600));
+      if (glow) timers.push(setTimeout(() => setMoved(false), 4800));
+      timers.push(setTimeout(persist, 4800));
     };
     const el = laneRef.current;
     if (el && typeof IntersectionObserver !== "undefined") {
